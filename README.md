@@ -37,7 +37,11 @@ Current features include:
 - Two-electron two-center integral (2e2c)
 - Two-electrons three-center integral (2e3c)
 - Two-electrons four-center integral (2e4c)
-- Gradients (currrently under construction - *watch out!*)
+- Analytic gradients (first derivatives w.r.t. nuclear coordinates) for all
+  of the above
+- Analytic Hessians (second derivatives) for one-electron integrals
+  (overlap/kinetic/nuclear attraction). Two-electron Hessians are not yet
+  available -- see [Derivatives](#derivatives-gradients-and-hessians) below.
 
 Integral computations use by default the integral library [libcint](https://github.com/sunqm/libcint) *via* [libcint_jll.jl](https://github.com/JuliaBinaryWrappers/libcint_jll.jl). A simple Julia-written integral module `Acsint.jl` is also available, but it is significantly slower than the `libcint`.  
 
@@ -73,6 +77,117 @@ julia> overlap(bset)
 | `sparseERI_2e4c`       | Electron repulsion integral - returns non-zero elements along with a index tuple | ![sERI](assets/4cERI.png)|
 | `ERI_2e3c`       | Electron repulsion integral over three centers. **Note:** this function requires another basis set as the second argument (that is the auxiliary basis set in [Density Fitting](http://vergil.chemistry.gatech.edu/notes/df.pdf)). It must be called as `ERI_2c3c(bset, aux)` | ![3cERI](assets/3cERI.png)|
 | `ERI_2e2c`       | Electron repulsion integral over two centers  | ![2cERI](assets/2cERI.png)|
+
+# Derivatives (Gradients and Hessians)
+
+Analytic derivatives w.r.t. nuclear Cartesian coordinates are available for
+every integral above. Naming follows the integral it differentiates, with a
+`∇` prefix for the first derivative (gradient) and `∇2` for the second
+(Hessian): `overlap` -> `∇overlap` -> `∇2overlap`, and so on. The atom being
+differentiated is given as an integer index `iA` into `bset.atoms` (Hessians
+take two, `iA, iB`, one per derivative order); the extra trailing axes on the
+output hold the 3 Cartesian components per derivative order (`(..., 3)` for
+a gradient, `(..., 3, 3)` for a Hessian). As with the plain integrals, every
+function has an in-place `!` form and functions that take two basis sets
+(`ERI_2e3c(bset, auxbset)`-style) keep that same two-basis-set calling
+convention at every derivative order.
+
+## File organization
+
+Mirrors the integral files one directory over, by derivative order:
+
+| Order | Bundle file | Sub-files |
+|---|---|---|
+| 0 (integrals) | `Integrals.jl` | `Integrals/OneElectron.jl`, `TwoElectronTwoCenter.jl`, `TwoElectronThreeCenter.jl`, `TwoElectronFourCenter.jl`, `Multipole.jl` |
+| 1 (gradients) | `Gradients.jl` | `Gradients/OneElectronGrad.jl`, `TwoElectronGrad.jl`, `FiniteDifferences.jl` |
+| 2 (Hessians) | `Hessians.jl` | `Hessians/OneElectronHess.jl`, `NuclearHess.jl`, `FiniteDifferences.jl` |
+
+Two naming departures worth knowing about if you're looking for a function:
+
+- Two-electron integrals are split by center-count at the integral level
+  (`TwoElectronTwoCenter.jl`/`ThreeCenter.jl`/`FourCenter.jl`) but bundled
+  into a single `TwoElectronGrad.jl` at the gradient level (4-center,
+  3-center, and 2-center gradients all live there together).
+- Nuclear attraction gets its own file only at the Hessian level
+  (`NuclearHess.jl`, separate from `OneElectronHess.jl`) -- see below for
+  why.
+
+Each `FiniteDifferences.jl` holds central-difference reference
+implementations (`∇FD_*`/`∇2FD_*`) used to validate the analytic code one
+derivative order down (gradients are checked against finite differences of
+the integrals; Hessians against finite differences of the gradients), not
+meant for production use.
+
+## Gradients
+
+| Function | Output shape | Description |
+|---|---|---|
+| `∇overlap(bset, iA)` | `(nbas,nbas,3)` | Overlap gradient |
+| `∇kinetic(bset, iA)` | `(nbas,nbas,3)` | Kinetic energy gradient |
+| `∇nuclear(bset, iA)` | `(nbas,nbas,3)` | Nuclear attraction gradient |
+| `∇ERI_2e4c(bset, iA)` | `(nbas,nbas,nbas,nbas,3)` | Dense 4-center ERI gradient |
+| `∇sparseERI_2e4c(bset, iA)` | `(idx, ∇x, ∇y, ∇z)` | Screened, permutation-compressed 4-center ERI gradient -- see below |
+| `∇ERI_2e3c(bset, auxbset, iA)` | `(nbas,nbas,naux,3)` | 3-center ERI gradient (density fitting) |
+| `∇ERI_2e2c(auxbset, iA)` | `(naux,naux,3)` | 2-center (auxiliary metric) ERI gradient (density fitting) |
+
+## Hessians
+
+| Function | Output shape | Description |
+|---|---|---|
+| `∇2overlap(bset, iA, iB)` | `(nbas,nbas,3,3)` | Overlap Hessian |
+| `∇2kinetic(bset, iA, iB)` | `(nbas,nbas,3,3)` | Kinetic energy Hessian |
+| `∇2nuclear(bset, iA, iB)` | `(nbas,nbas,3,3)` | Nuclear attraction Hessian |
+
+Two-electron (ERI) Hessians -- dense 4-center, and the 3-center/2-center
+pair needed for a density-fitted Hessian -- don't exist in GaussianBasis.jl
+yet. The 4-center case is currently implemented ad hoc inside Fermi.jl
+(calling raw libcint kernels directly rather than going through a
+GaussianBasis.jl wrapper); the 3-center/2-center case is in progress.
+
+## Where Hessian-level functions are *not* just "one more derivative"
+
+It's tempting to assume every `∇2X` is a mechanical extension of the
+matching `∇X`, differentiated once more the same way. Two cases break that
+assumption, and are worth understanding before extending this pattern
+further (e.g. to the upcoming 2-electron Hessians):
+
+**`∇sparseERI_2e4c` isn't a compressed `∇ERI_2e4c`, it's a different
+algorithm.** `sparseERI_2e4c` (the *energy* integral) applies Cauchy-Schwarz
+shell-pair screening -- skipping whole shell quartets whose contribution is
+provably negligible -- *before* computing anything, which is where its
+performance advantage over the dense `ERI_2e4c` actually comes from.
+`∇sparseERI_2e4c` reuses that same screening bound (`σ_ij := sqrt(max|(ij|
+ij)|)`, computed from the plain, undifferentiated integrals -- see
+`schwarz_bounds(bset)`, which callers making repeated `∇sparseERI_2e4c`
+calls across atoms should compute once and pass in via the `ij_vals`/
+`σvals` keyword arguments, rather than recomputing it, atom-independent, on
+every call). The screening bound is a valid proxy for the *derivative*
+integral too: differentiating a Gaussian-product ERI only introduces a
+bounded polynomial prefactor via the chain rule, so the exponential
+shell-pair falloff that makes the bound work for the energy integral is
+unchanged for its derivative. Symmetry-wise, `∇sparseERI_2e4c` also drops
+whole quartets `∇ERI_2e4c` cannot: any quartet with all four indices on the
+same atom, or none of them on it, has an *exactly* zero derivative by
+translational invariance, not just a small one -- correctness, not an
+approximation.
+
+**The nuclear attraction Hessian needs different kernels than
+overlap/kinetic's, not just one more derivative of the same ones.** Overlap
+and kinetic depend on exactly two positions (the two shell centers), so
+their Hessian is a direct atom-pair generalization of the gradient's atom-
+membership logic -- same kernel family (`ipip`/cross), one more derivative
+axis. Nuclear attraction depends on a *third* position: whichever nucleus
+supplies the `-Z/|r-R|` potential. A derivative w.r.t. atom A can only land
+on that potential role when the supplying nucleus *is* A, so the second-
+derivative kernels have to isolate one nucleus at a time (via a
+repositionable `rinv` operator) and combine two genuinely different pieces
+-- "both derivatives on a shell center" (same kernel family as
+overlap/kinetic, nucleus-independent) and "at least one derivative on the
+nuclear-charge position" (a different kernel family, `ipiprinv`/`iprinvip`,
+applied once per relevant nucleus) -- without double-counting. See
+`Hessians/NuclearHess.jl`'s header comment for the full derivation; this is
+also why nuclear attraction is split into its own file at the Hessian level
+but not at the gradient level.
 
 # Advanced Usage
 
