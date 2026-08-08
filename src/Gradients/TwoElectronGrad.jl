@@ -155,32 +155,76 @@ function ∇ERI_2e4c!(out, BS::BasisSet, iA)
     return out
 end
 
-function ∇sparseERI_2e4c(BS::BasisSet, iA)
+"""
+    schwarz_bounds(BS::BasisSet)
+
+Per-shell-pair Cauchy-Schwarz screening bound `σ_ij := sqrt(max|(ij|ij)|)`,
+computed from the ordinary (undifferentiated) integrals -- an O(nshells^2)
+pass over diagonal shell quartets, independent of any nuclear derivative.
+Used by both `sparseERI_2e4c` and `∇sparseERI_2e4c` to skip shell quartets
+whose bound falls below a cutoff. `∇sparseERI_2e4c` is typically called once
+per atom (a full gradient loops over every atom, `eri_grad_JK` does the same
+inside CPHF); since this bound doesn't depend on which atom is being
+differentiated, callers making several `∇sparseERI_2e4c` calls should
+compute it once via this function and pass it through via the `ij_vals`/
+`σvals` kwargs, instead of paying this cost again for every atom.
+"""
+function schwarz_bounds(BS::BasisSet)
+    Nvals = num_basis.(BS.basis)
+    Nmax = maximum(Nvals)
+    num_ij = Int((BS.nshells^2 - BS.nshells)/2) + BS.nshells
+    ij_vals = Array{NTuple{2,Int32}}(undef, num_ij)
+    σvals = zeros(Cdouble, num_ij)
+    tmp = zeros(Cdouble, Nmax^4)
+    for i = 1:BS.nshells
+        for j = i:BS.nshells
+            idx = index2(i-1,j-1) + 1
+            ij_vals[idx] = (i,j)
+            ERI_2e4c!(tmp, BS, i, i, j, j)
+            σvals[idx] = √maximum(tmp)
+        end
+    end
+    return ij_vals, σvals
+end
+
+"""
+    ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff=1e-12; ij_vals=nothing, σvals=nothing)
+
+Derivative (w.r.t. atom `iA`'s three Cartesian directions) of the unique
+(permutation-compressed) two-electron four-center integrals, screened the
+same way `sparseERI_2e4c` screens the energy integrals: a shell quartet is
+skipped up front whenever `σ_ij*σ_kl <= cutoff` (see `schwarz_bounds`). This
+is a valid proxy for the derivative too -- differentiating a Gaussian-product
+ERI w.r.t. a nuclear center only introduces a bounded polynomial prefactor
+via the chain rule, the exponential shell-pair falloff with distance that
+makes the bound work for the energy integral is unchanged for its
+derivative. Quartets entirely on atom `iA` or entirely off it are also
+skipped (exactly zero by translational invariance, not a numerical cutoff).
+
+`ij_vals`/`σvals` default to a fresh `schwarz_bounds(BS)` call if not
+supplied -- pass a precomputed pair in when calling this repeatedly across
+atoms (see `schwarz_bounds`'s docstring) to avoid recomputing it every time.
+
+Results are accumulated into a growable buffer (`sizehint!`ed from a cheap
+upper-bound estimate on the number of surviving elements, no extra integral
+evaluations needed for the estimate) rather than a fixed array pre-sized at
+the full theoretical unique-element count -- peak memory scales with the
+number of surviving elements instead of nbas^4/8. Unlike `sparseERI_2e4c`
+(called once per SCF run, amortizing its own screening/threading cost over
+every Fock build that follows), this is typically called once per atom per
+gradient/Hessian evaluation -- there's much less work to amortize a
+thread-pool's synchronization overhead over, and measurement backed up the
+theory: at default (single-)thread count, threading this made it ~2x
+*slower* than a plain loop for a small molecule, so this stays serial.
+"""
+function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, σvals = nothing)
 
     A = BS.atoms[iA]
 
-    # Number of unique integral elements
-    N = ((BS.nbas^2 - BS.nbas) ÷ 2) + BS.nbas
-    N = ((N^2 - N) ÷ 2) + N
-
-    # Pre allocate output
-    ∇x = zeros(N)
-    ∇y = zeros(N)
-    ∇z = zeros(N)
-
-    indexes = Array{NTuple{4,Int16}}(undef, N)
-    mask = repeat([false], N) 
-
     # Shell indexes for basis in the atom A
-    Ashells = Int[]
-    notAshells = Int[]
+    in_A = falses(BS.nshells)
     for i in 1:BS.nshells
-        b = BS.basis[i]
-        if b.atom == A
-            push!(Ashells, i)
-        else
-            push!(notAshells, i)
-        end
+        BS.basis[i].atom == A && (in_A[i] = true)
     end
 
     # Pre compute a list of number of basis for each shell (2l +1)
@@ -188,125 +232,139 @@ function ∇sparseERI_2e4c(BS::BasisSet, iA)
     ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
     Nmax = maximum(Nvals)
 
-    # Unique shell pairs with i < j
+    # Unique shell pairs with i ≤ j
     num_ij = Int((BS.nshells^2 - BS.nshells)/2) + BS.nshells
 
-    # Save ij pairs
-    ij_vals = Array{NTuple{2,Int32}}(undef, num_ij)
-    lim = Int32(BS.nshells - 1)
-    for i = 1:BS.nshells
-        for j = i:BS.nshells
-            idx = index2(i-1,j-1) + 1
-            ij_vals[idx] = (i,j)
+    if ij_vals === nothing || σvals === nothing
+        ij_vals, σvals = schwarz_bounds(BS)
+    end
+
+    # Candidate shell quartets (ij,kl), ij ≤ kl: Schwarz-screened AND
+    # touching atom A in some but not all of the four slots. A plain nested
+    # loop rather than a filtered/flattened generator -- eltype() on the
+    # latter gives up and infers Any (see sparseERI_2e4c's comment on the
+    # same issue), which would box every (i,j,k,l) tuple in the hot loop
+    # below; measured as the dominant cost here, more than any of the actual
+    # per-quartet integral work.
+    #
+    # Upper bound on the number of surviving AO elements (Nvals products
+    # only, no ERI calls), used to sizehint! the buffers below.
+    size_ub = 0
+    @inbounds for ij in 1:num_ij
+        i, j = ij_vals[ij]
+        for kl in ij:num_ij
+            σvals[ij]*σvals[kl] <= cutoff && continue
+            k, l = ij_vals[kl]
+            nA = in_A[i] + in_A[j] + in_A[k] + in_A[l]
+            (nA == 0 || nA == 4) && continue
+            size_ub += Nvals[i]*Nvals[j]*Nvals[k]*Nvals[l]
         end
     end
 
+    indexes = sizehint!(Vector{NTuple{4,Int16}}(), size_ub)
+    ∇x = sizehint!(Cdouble[], size_ub)
+    ∇y = sizehint!(Cdouble[], size_ub)
+    ∇z = sizehint!(Cdouble[], size_ub)
+
     buf = zeros(Cdouble, 3*Nmax^4)
-    
-    # i,j,k,l => Shell indexes starting at zero
+
+    # i,j,k,l => Shell indexes starting at one
     # I, J, K, L => AO indexes starting at one
-    for ij in eachindex(ij_vals)
-    #@sync for ij in eachindex(ij_vals)
-        #Threads.@spawn begin
-        #@inbounds begin
-            i,j = ij_vals[ij]
-            Ni, Nj = Nvals[i], Nvals[j]
+    @inbounds for ij in 1:num_ij
+        i, j = ij_vals[ij]
+        for kl in ij:num_ij
+            σvals[ij]*σvals[kl] <= cutoff && continue
+            k, l = ij_vals[kl]
+            nA = in_A[i] + in_A[j] + in_A[k] + in_A[l]
+            (nA == 0 || nA == 4) && continue
+        begin
+            Ni, Nj, Nk, Nl = Nvals[i], Nvals[j], Nvals[k], Nvals[l]
             Nij = Ni*Nj
-            ioff = ao_offset[i]
-            joff = ao_offset[j]
-            for kl in ij:num_ij
-                k,l = ij_vals[kl]
+            Nijk = Nij*Nk
+            Nijkl = Nijk*Nl
+            ioff, joff, koff, loff = ao_offset[i], ao_offset[j], ao_offset[k], ao_offset[l]
 
-                # If all basis are centered at A, or none is, the derivative is zero
-                x_in_A = [x in Ashells for x = (i,j,k,l)]
-                if !any(x_in_A) || all(x_in_A)
-                    continue
-                end
+            # NOTE: Using loops instead of array operations could make this more efficient
+            # Compute ERI
+            bufx = zeros(Cdouble, Ni, Nj, Nk, Nl)
+            bufy = zeros(Cdouble, Ni, Nj, Nk, Nl)
+            bufz = zeros(Cdouble, Ni, Nj, Nk, Nl)
+            if in_A[i]
+                cint2e_ip1_sph!(buf, [i,j,k,l], BS.lib)
+                bufx += reshape(buf[1:Nijkl], Ni, Nj, Nk, Nl)
+                bufy += reshape(buf[Nijkl+1:2*Nijkl], Ni, Nj, Nk, Nl)
+                bufz += reshape(buf[2*Nijkl+1:3*Nijkl], Ni, Nj, Nk, Nl)
+            end
 
-                Nk, Nl = Nvals[k], Nvals[l]
-                Nijk = Nij*Nk
-                Nijkl = Nijk*Nl
-                koff = ao_offset[k]
-                loff = ao_offset[l]
+            if in_A[j]
+                cint2e_ip1_sph!(buf, [j,i,k,l], BS.lib)
+                bufx += permutedims(reshape(buf[1:Nijkl],           Nj, Ni, Nk, Nl), (2,1,3,4))
+                bufy += permutedims(reshape(buf[Nijkl+1:2*Nijkl],   Nj, Ni, Nk, Nl), (2,1,3,4))
+                bufz += permutedims(reshape(buf[2*Nijkl+1:3*Nijkl], Nj, Ni, Nk, Nl), (2,1,3,4))
+            end
 
-                # NOTE: Using loops instead of array operations could make this more efficient
-                # Compute ERI
-                bufx = zeros(Cdouble, Int(Ni), Int(Nj), Int(Nk), Int(Nl))
-                bufy = zeros(Cdouble, Int(Ni), Int(Nj), Int(Nk), Int(Nl))
-                bufz = zeros(Cdouble, Int(Ni), Int(Nj), Int(Nk), Int(Nl))
-                if x_in_A[1]
-                    cint2e_ip1_sph!(buf, [i,j,k,l], BS.lib)
-                    bufx += reshape(buf[1:Nijkl], Int(Ni), Int(Nj), Int(Nk), Int(Nl))
-                    bufy += reshape(buf[Nijkl+1:2*Nijkl], Int(Ni), Int(Nj), Int(Nk), Int(Nl))
-                    bufz += reshape(buf[2*Nijkl+1:3*Nijkl], Int(Ni), Int(Nj), Int(Nk), Int(Nl))
-                end
+            if in_A[k]
+                cint2e_ip1_sph!(buf, [k,l,i,j], BS.lib)
+                bufx += permutedims(reshape(buf[1:Nijkl],           Nk, Nl, Ni, Nj), (3,4,1,2))
+                bufy += permutedims(reshape(buf[Nijkl+1:2*Nijkl],   Nk, Nl, Ni, Nj), (3,4,1,2))
+                bufz += permutedims(reshape(buf[2*Nijkl+1:3*Nijkl], Nk, Nl, Ni, Nj), (3,4,1,2))
+            end
 
-                if x_in_A[2]
-                    cint2e_ip1_sph!(buf, [j,i,k,l], BS.lib)
-                    bufx += permutedims(reshape(buf[1:Nijkl],           Int(Nj), Int(Ni), Int(Nk), Int(Nl)), (2,1,3,4))
-                    bufy += permutedims(reshape(buf[Nijkl+1:2*Nijkl],   Int(Nj), Int(Ni), Int(Nk), Int(Nl)), (2,1,3,4))
-                    bufz += permutedims(reshape(buf[2*Nijkl+1:3*Nijkl], Int(Nj), Int(Ni), Int(Nk), Int(Nl)), (2,1,3,4))
-                end
+            if in_A[l]
+                cint2e_ip1_sph!(buf, [l,k,i,j], BS.lib)
+                bufx += permutedims(reshape(buf[1:Nijkl],           Nl, Nk, Ni, Nj), (3,4,2,1))
+                bufy += permutedims(reshape(buf[Nijkl+1:2*Nijkl],   Nl, Nk, Ni, Nj), (3,4,2,1))
+                bufz += permutedims(reshape(buf[2*Nijkl+1:3*Nijkl], Nl, Nk, Ni, Nj), (3,4,2,1))
+            end
 
-                if x_in_A[3]
-                    cint2e_ip1_sph!(buf, [k,l,i,j], BS.lib)
-                    bufx += permutedims(reshape(buf[1:Nijkl],           Int(Nk), Int(Nl), Int(Ni), Int(Nj)), (3,4,1,2))
-                    bufy += permutedims(reshape(buf[Nijkl+1:2*Nijkl],   Int(Nk), Int(Nl), Int(Ni), Int(Nj)), (3,4,1,2))
-                    bufz += permutedims(reshape(buf[2*Nijkl+1:3*Nijkl], Int(Nk), Int(Nl), Int(Ni), Int(Nj)), (3,4,1,2))
-                end
+            ### This block aims to retrieve unique elements within buf and map them to AO indexes
+            # is, js, ks, ls are indexes within the shell e.g. for a p shell is = (1, 2, 3)
+            # bl, bkl, bjkl are used to map the (i,j,k,l) index into a one-dimensional index for buf
+            # That is, get the correct integrals for the AO quartet.
+            #
+            # Only when the same shell-pair is reused for bra and ket (i==k && j==l)
+            # does this block become self-symmetric (is,js and ks,ls range over the
+            # exact same configuration space), so every (I,J,K,L) generated below has
+            # a mirror (K,L,I,J) also generated in this same shell quartet -- guarded
+            # by IJ>KL&&continue to push each AO quartet once, not twice.
+            self_paired = i == k && j == l
+            for ls = 1:Nl
+                L = loff + ls
+                bl = Nijk*(ls-1)
+                for ks = 1:Nk
+                    K = koff + ks
+                    L < K && break
 
-                if x_in_A[4]
-                    cint2e_ip1_sph!(buf, [l,k,i,j], BS.lib)
-                    bufx += permutedims(reshape(buf[1:Nijkl],           Int(Nl), Int(Nk), Int(Ni), Int(Nj)), (3,4,2,1))
-                    bufy += permutedims(reshape(buf[Nijkl+1:2*Nijkl],   Int(Nl), Int(Nk), Int(Ni), Int(Nj)), (3,4,2,1))
-                    bufz += permutedims(reshape(buf[2*Nijkl+1:3*Nijkl], Int(Nl), Int(Nk), Int(Ni), Int(Nj)), (3,4,2,1))
-                end
+                    # L ≥ K
+                    # index2 for K,L
+                    KL = ((L * (L - 1)) ÷ 2) + K - 1
 
-                ### This block aims to retrieve unique elements within buf and map them to AO indexes
-                # is, js, ks, ls are indexes within the shell e.g. for a p shell is = (1, 2, 3)
-                # bl, bkl, bjkl are used to map the (i,j,k,l) index into a one-dimensional index for buf
-                # That is, get the correct integrals for the AO quartet.
-                for ls = 1:Nl
-                    L = loff + ls
-                    bl = Nijk*(ls-1)
-                    for ks = 1:Nk
-                        K = koff + ks
-                        L < K ? break : nothing
+                    bkl = Nij*(ks-1) + bl
+                    for js = 1:Nj
+                        J = joff + js
+                        bjkl = Ni*(js-1) + bkl
+                        for is = 1:Ni
+                            I = ioff + is
+                            J < I && break
 
-                        # L ≥ K
-                        # index2 for K,L
-                        KL = ((L * (L - 1)) ÷ 2) + K - 1                            
+                            # index2 for I,J
+                            IJ = ((J * (J - 1)) ÷ 2) + I - 1
 
-                        bkl = Nij*(ks-1) + bl
-                        for js = 1:Nj
-                            J = joff + js
-                            bjkl = Ni*(js-1) + bkl
-                            for is = 1:Ni
-                                I = ioff + is
-                                J < I ? break : nothing
+                            self_paired && IJ > KL && continue
 
-                                # index2 for I,J
-                                IJ = ((J * (J - 1)) ÷ 2) + I - 1
-
-                                idx = index2(IJ, KL) + 1
-                                ∇x[idx] = -bufx[is + bjkl]
-                                ∇y[idx] = -bufy[is + bjkl]
-                                ∇z[idx] = -bufz[is + bjkl]
-                                if KL ≥ IJ
-                                    indexes[idx] = (I, J, K, L)
-                                else
-                                    indexes[idx] = (K, L, I, J)
-                                end
-                                mask[idx] = true
-                            end
+                            push!(∇x, -bufx[is + bjkl])
+                            push!(∇y, -bufy[is + bjkl])
+                            push!(∇z, -bufz[is + bjkl])
+                            push!(indexes, KL ≥ IJ ? (I, J, K, L) : (K, L, I, J))
                         end
                     end
                 end
             end
-        #end #inbounds
-        #end #spawn
-    end #sync
-    return indexes[mask], ∇x[mask], ∇y[mask], ∇z[mask]
+        end
+        end
+    end
+
+    return indexes, ∇x, ∇y, ∇z
 end
 
 function ∇ERI_2e3c(BS1::BasisSet, BS2::BasisSet, iA)
