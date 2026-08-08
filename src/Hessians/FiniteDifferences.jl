@@ -23,3 +23,15 @@ end
 function ∇2FD_nuclear(BS::BasisSet, iA, iB, k, h=1e-5)
     return ∇2FD_1e(BS, ∇nuclear, iA, iB, k, h)
 end
+
+function ∇2FD_ERI_2e2c(BS::BasisSet, iA, iB, k, h=1e-5)
+    return ∇2FD_1e(BS, ∇ERI_2e2c, iA, iB, k, h)
+end
+
+function ∇2FD_ERI_2e3c(BS1::BasisSet, BS2::BasisSet, iA, iB, k, h=1e-5)
+    bs1_plus, bs1_minus = create_displacement(BS1, iB, k, h)
+    bs2_plus, bs2_minus = create_displacement(BS2, iB, k, h)
+    Xplus = ∇ERI_2e3c(bs1_plus, bs2_plus, iA)
+    Xminus = ∇ERI_2e3c(bs1_minus, bs2_minus, iA)
+    return (Xplus .- Xminus) ./ (2*h/Molecules.bohr_to_angstrom)
+end

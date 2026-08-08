@@ -42,8 +42,20 @@ function ∇21e!(out, BS::BasisSet, compute::String, iA, iB)
         # double-counting this shell-only contribution).
         ipip! = cint1e_ipipnuc_sph!
         ipXip! = cint1e_ipnucip_sph!
+    elseif compute == "metric"
+        # 2-center two-electron auxiliary metric (P|Q), density fitting's
+        # J_PQ. Depends on exactly two positions (the two shell centers,
+        # same as overlap/kinetic, no third "operator" position like nuclear
+        # attraction), so it reuses this exact same-shell/cross-shell
+        # structure -- the only difference is which basis set `BS` is (the
+        # auxiliary one) and which kernel family. `cint2c2e_*` kernels take
+        # an extra trailing `opt` argument (2-electron kernels always do,
+        # unlike 1-electron ones) but that's handled inside the Libcint.jl
+        # binding itself, invisible here.
+        ipip! = cint2c2e_ipip1_sph!
+        ipXip! = cint2c2e_ip1ip2_sph!
     else
-        throw(ArgumentError("compute must be \"overlap\", \"kinetic\", or \"nuclear_shellonly\" (use ∇2nuclear! for the full nuclear attraction Hessian)"))
+        throw(ArgumentError("compute must be \"overlap\", \"kinetic\", \"nuclear_shellonly\", or \"metric\" (use ∇2nuclear! for the full nuclear attraction Hessian)"))
     end
 
     Aat = BS.atoms[iA]
@@ -122,3 +134,14 @@ end
 ∇2overlap!(out, BS::BasisSet, iA, iB) = ∇21e!(out, BS, "overlap", iA, iB)
 ∇2kinetic(BS::BasisSet, iA, iB) = ∇21e(BS, "kinetic", iA, iB)
 ∇2kinetic!(out, BS::BasisSet, iA, iB) = ∇21e!(out, BS, "kinetic", iA, iB)
+
+"""
+    ∇2ERI_2e2c(auxbset::BasisSet, iA, iB)
+
+Second derivative (Hessian, atoms `iA`,`iB`) of the 2-center two-electron
+auxiliary metric `(P|Q)` (density fitting's `J_PQ`). Output `(naux,naux,3,3)`.
+Reuses `∇21e!`'s same-shell/cross-shell structure via the `"metric"`
+compute-case -- see this file's header comment.
+"""
+∇2ERI_2e2c(BS::BasisSet, iA, iB) = ∇21e(BS, "metric", iA, iB)
+∇2ERI_2e2c!(out, BS::BasisSet, iA, iB) = ∇21e!(out, BS, "metric", iA, iB)

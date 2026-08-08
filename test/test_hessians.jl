@@ -49,3 +49,46 @@ end
         @test maximum(abs.(total)) < 1e-8
     end
 end
+
+auxbs = BasisSet("cc-pvqz-jkfit", atoms)
+
+@testset "∂²(P|Q)/∂X²" begin
+    for iA = 1:length(atoms), iB = 1:length(atoms)
+        d2J = ∇2ERI_2e2c(auxbs, iA, iB)
+        for k = 1:3
+            @test d2J[:,:,:,k] ≈ ∇2FD_ERI_2e2c(auxbs, iA, iB, k) atol=1e-6
+        end
+    end
+end
+
+@testset "∂²(μν|P)/∂X²" begin
+    for iA = 1:length(atoms), iB = 1:length(atoms)
+        d2P = ∇2ERI_2e3c(bs, auxbs, iA, iB)
+        for k = 1:3
+            @test d2P[:,:,:,:,k] ≈ ∇2FD_ERI_2e3c(bs, auxbs, iA, iB, k) atol=1e-6
+        end
+    end
+end
+
+@testset "2-electron Hessian translational invariance" begin
+    # Same sum_B H(A,B) == 0 check as ∂²V/∂X² above, for both the metric and
+    # 3-center Hessians.
+    for iA = 1:length(atoms)
+        totalJ = zeros(auxbs.nbas, auxbs.nbas, 3, 3)
+        totalP = zeros(bs.nbas, bs.nbas, auxbs.nbas, 3, 3)
+        for iB = 1:length(atoms)
+            totalJ .+= ∇2ERI_2e2c(auxbs, iA, iB)
+            totalP .+= ∇2ERI_2e3c(bs, auxbs, iA, iB)
+        end
+        @test maximum(abs.(totalJ)) < 1e-8
+        @test maximum(abs.(totalP)) < 1e-8
+    end
+end
+
+@testset "(μν|P) mu<->nu AO symmetry" begin
+    # (μν|P) = (νμ|P) exactly, at every derivative order.
+    for iA = 1:length(atoms), iB = 1:length(atoms)
+        H = ∇2ERI_2e3c(bs, auxbs, iA, iB)
+        @test H ≈ permutedims(H, (2,1,3,4,5))
+    end
+end

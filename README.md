@@ -40,8 +40,10 @@ Current features include:
 - Analytic gradients (first derivatives w.r.t. nuclear coordinates) for all
   of the above
 - Analytic Hessians (second derivatives) for one-electron integrals
-  (overlap/kinetic/nuclear attraction). Two-electron Hessians are not yet
-  available -- see [Derivatives](#derivatives-gradients-and-hessians) below.
+  (overlap/kinetic/nuclear attraction) and the 2-center/3-center two-electron
+  integrals (density fitting). The dense 4-center ERI Hessian is not yet
+  available in GaussianBasis.jl itself -- see
+  [Derivatives](#derivatives-gradients-and-hessians) below.
 
 Integral computations use by default the integral library [libcint](https://github.com/sunqm/libcint) *via* [libcint_jll.jl](https://github.com/JuliaBinaryWrappers/libcint_jll.jl). A simple Julia-written integral module `Acsint.jl` is also available, but it is significantly slower than the `libcint`.  
 
@@ -137,19 +139,19 @@ meant for production use.
 | `∇2overlap(bset, iA, iB)` | `(nbas,nbas,3,3)` | Overlap Hessian |
 | `∇2kinetic(bset, iA, iB)` | `(nbas,nbas,3,3)` | Kinetic energy Hessian |
 | `∇2nuclear(bset, iA, iB)` | `(nbas,nbas,3,3)` | Nuclear attraction Hessian |
+| `∇2ERI_2e2c(auxbset, iA, iB)` | `(naux,naux,3,3)` | 2-center (auxiliary metric) ERI Hessian (density fitting) |
+| `∇2ERI_2e3c(bset, auxbset, iA, iB)` | `(nbas,nbas,naux,3,3)` | 3-center ERI Hessian (density fitting) |
 
-Two-electron (ERI) Hessians -- dense 4-center, and the 3-center/2-center
-pair needed for a density-fitted Hessian -- don't exist in GaussianBasis.jl
-yet. The 4-center case is currently implemented ad hoc inside Fermi.jl
-(calling raw libcint kernels directly rather than going through a
-GaussianBasis.jl wrapper); the 3-center/2-center case is in progress.
+The dense 4-center ERI Hessian doesn't exist in GaussianBasis.jl -- it's
+currently implemented ad hoc inside Fermi.jl (calling raw libcint kernels
+directly rather than going through a GaussianBasis.jl wrapper).
 
 ## Where Hessian-level functions are *not* just "one more derivative"
 
 It's tempting to assume every `∇2X` is a mechanical extension of the
-matching `∇X`, differentiated once more the same way. Two cases break that
+matching `∇X`, differentiated once more the same way. Three cases break that
 assumption, and are worth understanding before extending this pattern
-further (e.g. to the upcoming 2-electron Hessians):
+further (e.g. to the dense 4-center ERI Hessian):
 
 **`∇sparseERI_2e4c` isn't a compressed `∇ERI_2e4c`, it's a different
 algorithm.** `sparseERI_2e4c` (the *energy* integral) applies Cauchy-Schwarz
@@ -188,6 +190,18 @@ applied once per relevant nucleus) -- without double-counting. See
 `Hessians/NuclearHess.jl`'s header comment for the full derivation; this is
 also why nuclear attraction is split into its own file at the Hessian level
 but not at the gradient level.
+
+**`∇2ERI_2e3c` has 6 shell-position placements, not the 2-shell case's
+2.** Overlap/kinetic and the metric `∇2ERI_2e2c` only ever have two
+positions (same-shell, cross-shell). The 3-center integral `(μν|P)` has
+three unpaired positions -- μ, ν (regular, symmetric under swap), and P
+(auxiliary) -- giving 3 same-shell placements (μμ, νν, PP) and 3 *distinct*
+cross placements (μν, μP, νP), each needing its own libcint kernel or
+kernel-plus-permutation (`cint3c2e_ipip1`/`ipip2` for same-shell,
+`ipvip1`/`ip1ip2` for cross -- see `Hessians/TwoElectronThreeCenterHess.jl`'s
+header for the full mapping, mirroring how Fermi.jl's own 4-center ERI
+Hessian already worked out the same `ipvip1`/`ip1ip2` naming pattern one
+shell-count up).
 
 # Advanced Usage
 
