@@ -70,75 +70,78 @@ julia> overlap(bset)
  0.646804  1.0
 ```
 
+# Basic Functions
+
 | Function      | Description | Formula |
 |---------------|-------------|:-------:|
-| `overlap`       | Overlap between two basis functions | ![S](assets/ovlp.png)|
-| `kinetic`       | Kinetic integral | ![T](assets/kin.png)|
-| `nuclear`       | Nuclear attraction integral  | ![V](assets/nuc.png)|
-| `ERI_2e4c`       | Electron repulsion integral - returns a full rank-4 tensor! | ![ERI](assets/4cERI.png)|
-| `sparseERI_2e4c`       | Electron repulsion integral - returns non-zero elements along with a index tuple | ![sERI](assets/4cERI.png)|
-| `ERI_2e3c`       | Electron repulsion integral over three centers. **Note:** this function requires another basis set as the second argument (that is the auxiliary basis set in [Density Fitting](http://vergil.chemistry.gatech.edu/notes/df.pdf)). It must be called as `ERI_2c3c(bset, aux)` | ![3cERI](assets/3cERI.png)|
-| `ERI_2e2c`       | Electron repulsion integral over two centers  | ![2cERI](assets/2cERI.png)|
+| `overlap`       | Overlap between two basis functions | $\langle \chi_i\|\chi_j \rangle$ |
+| `kinetic`       | Kinetic integral | $\frac{1}{2}\langle\chi_i\|\hat{p}^2\|\chi_j\rangle$|
+| `nuclear`       | Nuclear attraction integral  | $\sum_A\langle\chi_i\|\frac{Z_A}{R_A - r}\|\chi_j\rangle$|
+| `ERI_2e4c`       | Electron repulsion integral - returns a full rank-4 tensor. Chemist's notation. | $\left(\chi_i\chi_j\|\frac{1}{r}\|\chi_k\chi_l\right)$|
+| `sparseERI_2e4c`       | Electron repulsion integral - returns non-zero elements along with a index tuple. Chemist's notation. | $\left(\chi_i\chi_j\|\frac{1}{r}\|\chi_k\chi_l\right)$|
+| `ERI_2e3c`       | Electron repulsion integral over three centers. **Note:** this function requires another basis set as the second argument (that is the auxiliary basis set in [Density Fitting](http://vergil.chemistry.gatech.edu/notes/df.pdf)). It must be called as `ERI_2c3c(bset, aux)` | $\left(\chi_i\chi_j\|\frac{1}{r}\|P_k\right)$|
+| `ERI_2e2c`       | Electron repulsion integral over two centers  | $\left(\chi_i\|\frac{1}{r}\|\chi_j\right)$|
+| `dipole`         | Dipole moment integral.                        | $\langle\chi_i\|\hat{x}\|\chi_j\rangle$ |
+
+Mutating versions of the functions are also available:
+
+```julia
+julia> T = zeros(2,2)
+julia> kinetic!(T, bset)
+2×2 Matrix{Float64}:
+ 0.760032  0.225205
+ 0.225205  0.760032
+```
+
+## Computing integrals element-wise
+
+For all integrals, you can get the full array by using the general syntax `integral(basisset)` (e.g. `overlap(bset)` or `ERI_2e4c(bset)`). Alternatively, you can specify a shell combination for which the integral must be computed
+```julia
+julia> ERI_2e4c(b1, 1,2,2,1)
+1×1×1×1 Array{Float64, 4}:
+[:, :, 1, 1] =
+ 0.2845189435761272
+
+julia> kinetic(b1, 1,2)
+1×1 Matrix{Float64}:
+ 0.2252049038643092
+ ```
+
+## Evaluating orbital amplitudes
+
+The function `atomic_orbital_amplitude(basisset, i, r)` can be used to calculate the atomic orbital amplitude of the `i`th basis function at positions `r`. `r` can be either a 3-vector for a single position or a 3× array for calculating many positions efficiently at once.
+
+```julia
+julia> bset = BasisSet("sto-3g", "H 0 0 0");
+julia> atomic_orbital_amplitude(bset, 1, [0.0,0.0,0.0])
+0.6282468778403579
+julia> atomic_orbital_amplitude(bset, 1, [0.1;0.2;0.3;;-0.1;0.3;-0.2])
+2-element Vector{Float64}:
+ 0.49840190793869554
+ 0.49840190793869554
+```
 
 # Derivatives (Gradients and Hessians)
 
 Analytic derivatives w.r.t. nuclear Cartesian coordinates are available for
-most of the integrals above (exceptions noted below). Naming follows the
-integral it differentiates, with a `∇` prefix for the first derivative
-(gradient) and `∇2` for the second (Hessian): `overlap` -> `∇overlap` ->
-`∇2overlap`, and so on. The atom being differentiated is given as an
-integer index `iA` into `bset.atoms` (Hessians take two, `iA, iB`, one per
-derivative order); the extra trailing axes on the output hold the 3
-Cartesian components per derivative order (`(..., 3)` for a gradient,
-`(..., 3, 3)` for a Hessian). As with the plain integrals, functions
-generally have an in-place `!` form, and functions that take two basis sets
-(`ERI_2e3c(bset, auxbset)`-style) keep that same two-basis-set calling
-convention at every derivative order that exists for them.
+most of the integrals above. An additional argument `iA` is needed indicating which atom bears the coordinates being differentiated.
 
-**Read this before assuming a `∇2X` exists just because `∇X` does, or that
-every function follows the shape above.** Gradient/Hessian coverage is
-*not* a clean 1:1 grid, and one function breaks the general shape/in-place
-pattern entirely:
+```julia
+```bset = ∇overlap(bset, 2)
+2×2×3 Array{Float64, 3}:
+[:, :, 1] =
+  0.0       -0.345283
+ -0.345283   0.0
 
-- **`∇sparseERI_2e4c` doesn't return a plain array, and has no `!` form.**
-  Every other function here returns a single dense array with the
-  derivative axes appended, with an in-place counterpart. `∇sparseERI_2e4c`
-  returns a 4-tuple `(idx, ∇x, ∇y, ∇z)` (a permutation-compressed index
-  list plus separate per-direction value arrays -- see the Gradients table
-  below) and has no `!` form, since that variable-length output doesn't fit
-  a fixed-size in-place buffer. If you're writing code that's generic over
-  "some derivative function," this is the one that won't fit the pattern.
-- **Hessian coverage is a strict subset of gradient coverage, not a
-  parallel structure.** `∇ERI_2e4c` (dense 4-center) and `∇sparseERI_2e4c`
-  (screened/compressed 4-center) both have gradients but *no* Hessian
-  counterpart in this package -- see the note under the Hessians table for
-  exactly what does and doesn't exist instead.
+[:, :, 2] =
+ 0.0  0.0
+ 0.0  0.0
 
-## File organization
-
-Mirrors the integral files one directory over, by derivative order:
-
-| Order | Bundle file | Sub-files |
-|---|---|---|
-| 0 (integrals) | `Integrals.jl` | `Integrals/OneElectron.jl`, `TwoElectronTwoCenter.jl`, `TwoElectronThreeCenter.jl`, `TwoElectronFourCenter.jl`, `Multipole.jl` |
-| 1 (gradients) | `Gradients.jl` | `Gradients/OneElectronGrad.jl`, `TwoElectronGrad.jl`, `FiniteDifferences.jl` |
-| 2 (Hessians) | `Hessians.jl` | `Hessians/OneElectronHess.jl`, `NuclearHess.jl`, `FiniteDifferences.jl` |
-
-Two naming departures worth knowing about if you're looking for a function:
-
-- Two-electron integrals are split by center-count at the integral level
-  (`TwoElectronTwoCenter.jl`/`ThreeCenter.jl`/`FourCenter.jl`) but bundled
-  into a single `TwoElectronGrad.jl` at the gradient level (4-center,
-  3-center, and 2-center gradients all live there together).
-- Nuclear attraction gets its own file only at the Hessian level
-  (`NuclearHess.jl`, separate from `OneElectronHess.jl`) -- see below for
-  why.
-
-Each `FiniteDifferences.jl` holds central-difference reference
-implementations (`∇FD_*`/`∇2FD_*`) used to validate the analytic code one
-derivative order down (gradients are checked against finite differences of
-the integrals; Hessians against finite differences of the gradients), not
-meant for production use.
+[:, :, 3] =
+ 0.0  0.0
+ 0.0  0.0
+```
+Note that the output is 3 times the original array's size corresponding to the derivatives in each cartesian direction. Hence, it is important to be mindful of the size of the materialized arrays. These are summarized below:
 
 ## Gradients
 
@@ -161,78 +164,6 @@ meant for production use.
 | `∇2nuclear(bset, iA, iB)` | `(nbas,nbas,3,3)` | Nuclear attraction Hessian |
 | `∇2ERI_2e2c(auxbset, iA, iB)` | `(naux,naux,3,3)` | 2-center (auxiliary metric) ERI Hessian (density fitting) |
 | `∇2ERI_2e3c(bset, auxbset, iA, iB)` | `(nbas,nbas,naux,3,3)` | 3-center ERI Hessian (density fitting) |
-
-Two gradient-level functions have no Hessian counterpart here:
-
-- **Dense 4-center (`∇ERI_2e4c`'s Hessian)**: doesn't exist in
-  GaussianBasis.jl as a standalone integral function. Fermi.jl has an ad
-  hoc equivalent (`ERI_hess_JK`), but it's not a drop-in analog -- it calls
-  raw libcint kernels directly (bypassing a GaussianBasis.jl wrapper
-  entirely) and returns the second derivative already contracted against a
-  density matrix, not the raw `(nbas,nbas,nbas,nbas,3,3)` tensor
-  `∇2ERI_2e4c(bset, iA, iB)` would imply.
-- **Screened/compressed 4-center (`∇sparseERI_2e4c`'s Hessian)**: doesn't
-  exist *anywhere*, not in GaussianBasis.jl or as an ad hoc Fermi.jl
-  equivalent either. If you need a dense-ERI Hessian contribution today,
-  `ERI_hess_JK` (Fermi.jl) is the only option, exact-ERI only -- there's no
-  sparse/screened path at the Hessian level yet.
-
-## Where Hessian-level functions are *not* just "one more derivative"
-
-It's tempting to assume every `∇2X` is a mechanical extension of the
-matching `∇X`, differentiated once more the same way. Three cases break that
-assumption, and are worth understanding before extending this pattern
-further (e.g. to the dense 4-center ERI Hessian):
-
-**`∇sparseERI_2e4c` isn't a compressed `∇ERI_2e4c`, it's a different
-algorithm.** `sparseERI_2e4c` (the *energy* integral) applies Cauchy-Schwarz
-shell-pair screening -- skipping whole shell quartets whose contribution is
-provably negligible -- *before* computing anything, which is where its
-performance advantage over the dense `ERI_2e4c` actually comes from.
-`∇sparseERI_2e4c` reuses that same screening bound (`σ_ij := sqrt(max|(ij|
-ij)|)`, computed from the plain, undifferentiated integrals -- see
-`schwarz_bounds(bset)`, which callers making repeated `∇sparseERI_2e4c`
-calls across atoms should compute once and pass in via the `ij_vals`/
-`σvals` keyword arguments, rather than recomputing it, atom-independent, on
-every call). The screening bound is a valid proxy for the *derivative*
-integral too: differentiating a Gaussian-product ERI only introduces a
-bounded polynomial prefactor via the chain rule, so the exponential
-shell-pair falloff that makes the bound work for the energy integral is
-unchanged for its derivative. Symmetry-wise, `∇sparseERI_2e4c` also drops
-whole quartets `∇ERI_2e4c` cannot: any quartet with all four indices on the
-same atom, or none of them on it, has an *exactly* zero derivative by
-translational invariance, not just a small one -- correctness, not an
-approximation.
-
-**The nuclear attraction Hessian needs different kernels than
-overlap/kinetic's, not just one more derivative of the same ones.** Overlap
-and kinetic depend on exactly two positions (the two shell centers), so
-their Hessian is a direct atom-pair generalization of the gradient's atom-
-membership logic -- same kernel family (`ipip`/cross), one more derivative
-axis. Nuclear attraction depends on a *third* position: whichever nucleus
-supplies the `-Z/|r-R|` potential. A derivative w.r.t. atom A can only land
-on that potential role when the supplying nucleus *is* A, so the second-
-derivative kernels have to isolate one nucleus at a time (via a
-repositionable `rinv` operator) and combine two genuinely different pieces
--- "both derivatives on a shell center" (same kernel family as
-overlap/kinetic, nucleus-independent) and "at least one derivative on the
-nuclear-charge position" (a different kernel family, `ipiprinv`/`iprinvip`,
-applied once per relevant nucleus) -- without double-counting. See
-`Hessians/NuclearHess.jl`'s header comment for the full derivation; this is
-also why nuclear attraction is split into its own file at the Hessian level
-but not at the gradient level.
-
-**`∇2ERI_2e3c` has 6 shell-position placements, not the 2-shell case's
-2.** Overlap/kinetic and the metric `∇2ERI_2e2c` only ever have two
-positions (same-shell, cross-shell). The 3-center integral `(μν|P)` has
-three unpaired positions -- μ, ν (regular, symmetric under swap), and P
-(auxiliary) -- giving 3 same-shell placements (μμ, νν, PP) and 3 *distinct*
-cross placements (μν, μP, νP), each needing its own libcint kernel or
-kernel-plus-permutation (`cint3c2e_ipip1`/`ipip2` for same-shell,
-`ipvip1`/`ip1ip2` for cross -- see `Hessians/TwoElectronThreeCenterHess.jl`'s
-header for the full mapping, mirroring how Fermi.jl's own 4-center ERI
-Hessian already worked out the same `ipvip1`/`ip1ip2` naming pattern one
-shell-count up).
 
 # Advanced Usage
 
@@ -369,40 +300,3 @@ julia> kinetic(b1, b2)
  0.20091  0.203163  1.03401  0.314867
 ```
 This can be useful when working with projections from one basis set onto another. 
-
-### Computing integrals element-wise
-
-For all integrals, you can get the full array by using the general syntax `integral(basisset)` (e.g. `overlap(bset)` or `ERI_2e4c(bset)`). Alternatively, you can specify a shell combination for which the integral must be computed
-```julia
-julia> ERI_2e4c(b1, 1,2,2,1)
-1×1×1×1 Array{Float64, 4}:
-[:, :, 1, 1] =
- 0.2845189435761272
-
-julia> kinetic(b1, 1,2)
-1×1 Matrix{Float64}:
- 0.2252049038643092
- ```
-Mutating versions of the functions are also available 
-```julia
-julia> S = zeros(2,2);
-julia> overlap!(S, b1)
-julia> S
-2×2 Matrix{Float64}:
- 1.0       0.646804
- 0.646804  1.0
- ```
-
-### Evaluating orbital amplitudes
-
-The function `atomic_orbital_amplitude(basisset, i, r)` can be used to calculate the atomic orbital amplitude of the `i`th basis function at positions `r`. `r` can be either a 3-vector for a single position or a 3×… array for calculating many positions efficiently at once.
-
-```julia
-julia> bset = BasisSet("sto-3g", "H 0 0 0");
-julia> atomic_orbital_amplitude(bset, 1, [0.0,0.0,0.0])
-0.6282468778403579
-julia> atomic_orbital_amplitude(bset, 1, [0.1;0.2;0.3;;-0.1;0.3;-0.2])
-2-element Vector{Float64}:
- 0.49840190793869554
- 0.49840190793869554
-```
