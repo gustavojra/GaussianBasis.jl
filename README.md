@@ -83,16 +83,36 @@ julia> overlap(bset)
 # Derivatives (Gradients and Hessians)
 
 Analytic derivatives w.r.t. nuclear Cartesian coordinates are available for
-every integral above. Naming follows the integral it differentiates, with a
-`∇` prefix for the first derivative (gradient) and `∇2` for the second
-(Hessian): `overlap` -> `∇overlap` -> `∇2overlap`, and so on. The atom being
-differentiated is given as an integer index `iA` into `bset.atoms` (Hessians
-take two, `iA, iB`, one per derivative order); the extra trailing axes on the
-output hold the 3 Cartesian components per derivative order (`(..., 3)` for
-a gradient, `(..., 3, 3)` for a Hessian). As with the plain integrals, every
-function has an in-place `!` form and functions that take two basis sets
+most of the integrals above (exceptions noted below). Naming follows the
+integral it differentiates, with a `∇` prefix for the first derivative
+(gradient) and `∇2` for the second (Hessian): `overlap` -> `∇overlap` ->
+`∇2overlap`, and so on. The atom being differentiated is given as an
+integer index `iA` into `bset.atoms` (Hessians take two, `iA, iB`, one per
+derivative order); the extra trailing axes on the output hold the 3
+Cartesian components per derivative order (`(..., 3)` for a gradient,
+`(..., 3, 3)` for a Hessian). As with the plain integrals, functions
+generally have an in-place `!` form, and functions that take two basis sets
 (`ERI_2e3c(bset, auxbset)`-style) keep that same two-basis-set calling
-convention at every derivative order.
+convention at every derivative order that exists for them.
+
+**Read this before assuming a `∇2X` exists just because `∇X` does, or that
+every function follows the shape above.** Gradient/Hessian coverage is
+*not* a clean 1:1 grid, and one function breaks the general shape/in-place
+pattern entirely:
+
+- **`∇sparseERI_2e4c` doesn't return a plain array, and has no `!` form.**
+  Every other function here returns a single dense array with the
+  derivative axes appended, with an in-place counterpart. `∇sparseERI_2e4c`
+  returns a 4-tuple `(idx, ∇x, ∇y, ∇z)` (a permutation-compressed index
+  list plus separate per-direction value arrays -- see the Gradients table
+  below) and has no `!` form, since that variable-length output doesn't fit
+  a fixed-size in-place buffer. If you're writing code that's generic over
+  "some derivative function," this is the one that won't fit the pattern.
+- **Hessian coverage is a strict subset of gradient coverage, not a
+  parallel structure.** `∇ERI_2e4c` (dense 4-center) and `∇sparseERI_2e4c`
+  (screened/compressed 4-center) both have gradients but *no* Hessian
+  counterpart in this package -- see the note under the Hessians table for
+  exactly what does and doesn't exist instead.
 
 ## File organization
 
@@ -142,9 +162,20 @@ meant for production use.
 | `∇2ERI_2e2c(auxbset, iA, iB)` | `(naux,naux,3,3)` | 2-center (auxiliary metric) ERI Hessian (density fitting) |
 | `∇2ERI_2e3c(bset, auxbset, iA, iB)` | `(nbas,nbas,naux,3,3)` | 3-center ERI Hessian (density fitting) |
 
-The dense 4-center ERI Hessian doesn't exist in GaussianBasis.jl -- it's
-currently implemented ad hoc inside Fermi.jl (calling raw libcint kernels
-directly rather than going through a GaussianBasis.jl wrapper).
+Two gradient-level functions have no Hessian counterpart here:
+
+- **Dense 4-center (`∇ERI_2e4c`'s Hessian)**: doesn't exist in
+  GaussianBasis.jl as a standalone integral function. Fermi.jl has an ad
+  hoc equivalent (`ERI_hess_JK`), but it's not a drop-in analog -- it calls
+  raw libcint kernels directly (bypassing a GaussianBasis.jl wrapper
+  entirely) and returns the second derivative already contracted against a
+  density matrix, not the raw `(nbas,nbas,nbas,nbas,3,3)` tensor
+  `∇2ERI_2e4c(bset, iA, iB)` would imply.
+- **Screened/compressed 4-center (`∇sparseERI_2e4c`'s Hessian)**: doesn't
+  exist *anywhere*, not in GaussianBasis.jl or as an ad hoc Fermi.jl
+  equivalent either. If you need a dense-ERI Hessian contribution today,
+  `ERI_hess_JK` (Fermi.jl) is the only option, exact-ERI only -- there's no
+  sparse/screened path at the Hessian level yet.
 
 ## Where Hessian-level functions are *not* just "one more derivative"
 
