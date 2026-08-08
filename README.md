@@ -155,6 +155,30 @@ Note that the output is 3 times the original array's size corresponding to the d
 | `∇ERI_2e3c(bset, auxbset, iA)` | `(nbas,nbas,naux,3)` | 3-center ERI gradient (density fitting) |
 | `∇ERI_2e2c(auxbset, iA)` | `(naux,naux,3)` | 2-center (auxiliary metric) ERI gradient (density fitting) |
 
+`∇overlap`/`∇kinetic`/`∇nuclear` also have a shell-pair-level form, mirroring
+the plain integrals' `integral(bset, i, j)` shell-combination call shown
+above -- `∇overlap(bset, iA, i, j)` returns just the `(Ni,Nj,3)` block for
+shells `i,j`, instead of materializing the whole `(nbas,nbas,3)` array:
+```julia
+julia> ∇overlap(bset, 2, 1, 2)
+1×1×3 Array{Float64, 3}:
+[:, :, 1] =
+ -0.345283
+...
+```
+`∇overlap`/`∇kinetic` blocks are exactly zero (no libcint call made) whenever
+shells `i,j` are both on atom `iA` or both off it -- translational invariance
+makes both cases trivially zero, not merely small. `∇nuclear` has no such
+free case (every shell pair has *some* dependence on every atom, through the
+`Z_iA/|r-R_iA|` operator term alone), so it always does real work; it also
+rebuilds its internal charge-fudging arrays on every call, which is fine for
+a one-off shell pair but means you should prefer `∇nuclear(bset, iA)` over
+looping this yourself if you actually want the whole array -- the whole-array
+functions keep their own internal shell-pair loop (with the free-zero
+skipping and, for `∇nuclear`, the charge arrays built once and reused) and
+do **not** call these; the two are independent implementations validated
+against each other, not one layered on the other.
+
 ## Hessians
 
 | Function | Output shape | Description |
