@@ -179,6 +179,24 @@ skipping and, for `∇nuclear`, the charge arrays built once and reused) and
 do **not** call these; the two are independent implementations validated
 against each other, not one layered on the other.
 
+`∇ERI_2e4c` has the same kind of shell-level form too, one level up:
+`∇ERI_2e4c(bset, iA, i, j, k, l)` returns just the `(Ni,Nj,Nk,Nl,3)` block
+for shell quartet `i,j,k,l`. Like overlap/kinetic (not nuclear), the bare
+Coulomb operator has no third "operator center" to differentiate, so the
+free-zero case is the same shape: exactly zero, no libcint call, whenever
+`i,j,k,l` are ALL on atom `iA` or ALL off it. No permutation-symmetry
+propagation is applied (unlike the whole-array function, which computes one
+canonical ordering and propagates it to all 8 symmetric positions purely as
+a performance optimization) -- call with whichever ordering you need, each
+is computed directly and independently. Besides mirroring the plain
+integrals' shell-combination call, this is meant as a building block for
+genuinely integral-direct gradient/CPHF code: a derivative integral is only
+ever needed once (to help form some contracted quantity like CPHF's RHS),
+unlike the plain energy ERI which gets reused across every SCF/CPHF
+iteration -- so there's no caching benefit given up by computing one
+quartet, contracting it immediately, and discarding it, the way there would
+be for the energy integral.
+
 ## Hessians
 
 | Function | Output shape | Description |

@@ -155,6 +155,108 @@ function ∇ERI_2e4c!(out, BS::BasisSet, iA)
     return out
 end
 
+# --- Shell-quartet-level gradient ---
+#
+# GaussianBasis-idiomatic single-quartet primitive, mirroring the shell-pair
+# primitives added for the 1-electron gradients (see OneElectronGrad.jl's
+# header comment for the general rationale) -- motivated here by two things
+# `∇ERI_2e4c!`'s own whole-array loop can't offer: (1) a building block for
+# genuinely integral-direct gradient/CPHF code (compute one quartet,
+# contract it immediately, discard -- unlike the plain energy ERI, which is
+# reused across every SCF/CPHF iteration, a derivative quartet is only ever
+# needed once to help form Jq/Kq or a Hessian block, so there's no caching
+# benefit being given up by not materializing anything), and (2) avoiding
+# GaussianBasis.Libcint's raw kernel calls at the call site the way Fermi.jl's
+# `TwoElectronHess.jl` currently has to.
+#
+# Unlike `∇nuclear`, the bare Coulomb operator has no third "operator
+# center" to differentiate -- so the free-zero case is exactly the same
+# shape as overlap/kinetic's: a quartet's derivative is zero, no libcint
+# call needed, whenever ALL FOUR shells share atom-membership status (all on
+# atom `iA`, or all off it), by translational invariance. `∇ERI_2e4c!`'s
+# own loop already exploits exactly this (`!any(x_in_A) || all(x_in_A)`,
+# line 54 above).
+#
+# For a surviving quartet, this reuses `∇ERI_2e4c!`'s own per-shell
+# derivative terms (`[i'j|kl]`, `[ij'|kl]`, `[ij|k'l]`, `[ij|kl']`, one
+# `cint2e_ip1_sph!` call and index-permutation per shell that's actually on
+# atom `iA`) directly, for an ARBITRARY shell ordering -- unlike the
+# whole-array loop, this function does not need `i≤j`, `k≤l`, or any
+# canonical-quartet reordering first: that reordering in `∇ERI_2e4c!` is
+# purely a performance optimization (compute an 8-fold-symmetric block once,
+# propagate it to every symmetric position instead of recomputing), not a
+# correctness requirement -- the underlying `[i'j|kl]+[ij'|kl]+[ij|k'l]+
+# [ij|kl']` formula is already well-defined for any `(i,j,k,l)` on its own.
+
+"""
+    ∇ERI_2e4c(BS::BasisSet, iA::Int, i::Int, j::Int, k::Int, l::Int)
+
+Shell-quartet-level dense 4-center ERI gradient: `∂(ij|kl)/∂R_iA` for shells
+`i,j,k,l` w.r.t. atom `iA`'s three Cartesian directions, as an
+`(Ni,Nj,Nk,Nl,3)` block -- the same values `∇ERI_2e4c(BS,iA)` would place at
+that shell quartet's AO block. Exactly zero, no libcint call made, whenever
+`i,j,k,l` are ALL on atom `iA` or ALL off it (translational invariance --
+see this file's header comment). No permutation-symmetry propagation is
+applied here (unlike the whole-array function): call with whichever
+`(i,j,k,l)` ordering you actually need, each is computed directly.
+"""
+function ∇ERI_2e4c(BS::BasisSet, iA::Int, i::Int, j::Int, k::Int, l::Int)
+    Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
+    out = zeros(Ni, Nj, Nk, Nl, 3)
+    return ∇ERI_2e4c!(out, BS, iA, i, j, k, l)
+end
+
+function ∇ERI_2e4c!(out, BS::BasisSet, iA::Int, i::Int, j::Int, k::Int, l::Int)
+
+    A = BS.atoms[iA]
+    on_A = (BS.basis[i].atom == A, BS.basis[j].atom == A, BS.basis[k].atom == A, BS.basis[l].atom == A)
+
+    Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
+
+    if size(out) != (Ni, Nj, Nk, Nl, 3)
+        throw(DimensionMismatch("Size of the output array needs to be ($Ni, $Nj, $Nk, $Nl, 3)."))
+    end
+
+    out .= 0.0
+
+    if !any(on_A) || all(on_A)
+        return out
+    end
+
+    Nijkl = Ni*Nj*Nk*Nl
+    buf = zeros(Cdouble, 3*Nijkl)
+
+    # [i'j|kl]
+    if on_A[1]
+        cint2e_ip1_sph!(buf, [i,j,k,l], BS.lib)
+        ∇q = reshape(buf, Ni, Nj, Nk, Nl, 3)
+        out .-= ∇q
+    end
+
+    # [ij'|kl]
+    if on_A[2]
+        cint2e_ip1_sph!(buf, [j,i,k,l], BS.lib)
+        ∇q = reshape(buf, Nj, Ni, Nk, Nl, 3)
+        out .-= permutedims(∇q, (2,1,3,4,5))
+    end
+
+    # [ij|k'l]
+    if on_A[3]
+        cint2e_ip1_sph!(buf, [k,l,i,j], BS.lib)
+        ∇q = reshape(buf, Nk, Nl, Ni, Nj, 3)
+        out .-= permutedims(∇q, (3,4,1,2,5))
+    end
+
+    # [ij|kl']
+    if on_A[4]
+        cint2e_ip1_sph!(buf, [l,k,i,j], BS.lib)
+        ∇q = reshape(buf, Nl, Nk, Ni, Nj, 3)
+        out .-= permutedims(∇q, (3,4,2,1,5))
+    end
+
+    return out
+end
+
 """
     schwarz_bounds(BS::BasisSet)
 

@@ -107,7 +107,30 @@ end
         for iA = 1:length(atoms)
             sparse = ∇sparseERI_2e4c(bs, iA)
             dense = ∇ERI_2e4c(bs, iA)
-            @test SinD(sparse, dense) 
+            @test SinD(sparse, dense)
+        end
+    end
+
+    @testset "Shell-quartet-level" begin
+        # ∇ERI_2e4c(BS, iA, i, j, k, l) -- assembling every shell quartet's
+        # (Ni,Nj,Nk,Nl,3) block should reproduce the already-validated dense
+        # ∇ERI_2e4c(BS, iA) exactly (same underlying formula, no
+        # permutation-symmetry propagation, just direct per-quartet calls --
+        # self-consistency check, not a fresh integral validation).
+        Nvals = GaussianBasis.num_basis.(bs.basis)
+        ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:bs.nshells]
+        for iA = 1:length(atoms)
+            dense = ∇ERI_2e4c(bs, iA)
+            assembled = zeros(bs.nbas, bs.nbas, bs.nbas, bs.nbas, 3)
+            for i in 1:bs.nshells, j in 1:bs.nshells, k in 1:bs.nshells, l in 1:bs.nshells
+                Ni, Nj, Nk, Nl = Nvals[i], Nvals[j], Nvals[k], Nvals[l]
+                I = (ao_offset[i]+1):(ao_offset[i]+Ni)
+                J = (ao_offset[j]+1):(ao_offset[j]+Nj)
+                K = (ao_offset[k]+1):(ao_offset[k]+Nk)
+                L = (ao_offset[l]+1):(ao_offset[l]+Nl)
+                assembled[I,J,K,L,:] .= ∇ERI_2e4c(bs, iA, i, j, k, l)
+            end
+            @test dense ≈ assembled atol=1e-10
         end
     end
 end
