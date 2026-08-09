@@ -18,14 +18,12 @@ function LCint(atoms::Vector{At}, basis::Vector{Bs}) where {At<:Atom,Bs<:BasisFu
     natm = length(atoms)
 
     nshells = length(basis)
-    nbas    = 0
     nexps   = 0
     nprims  = 0
 
     for i in eachindex(atoms)
         for b in basis
             if b.atom == atoms[i]
-                nbas    += num_basis(b)
                 nexps   += length(b.exp)
                 nprims  += length(b.coef)
             end
@@ -79,7 +77,7 @@ function LCint(atoms::Vector{At}, basis::Vector{Bs}) where {At<:Atom,Bs<:BasisFu
         # Eigth, nothing
         ib += 1
     end
-    return LCint(lc_atm, Cint(natm), lc_bas, Cint(nbas), env)
+    return LCint(lc_atm, Cint(natm), lc_bas, Cint(nshells), env)
 end
 
 #function LCint(BS1::BasisSet, BS2::BasisSet)

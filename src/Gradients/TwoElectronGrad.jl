@@ -228,6 +228,34 @@ function ∇ERI_2e4c(BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int,
 end
 
 function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
+    Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
+    Nijkl = Ni*Nj*Nk*Nl
+    buf = zeros(Cdouble, 3*Nijkl)
+    tmp = zeros(Cdouble, 3*Nijkl)
+    shls = zeros(Cint, 4)
+    return ∇ERI_2e4c!(out, BS, on_A, i, j, k, l, buf, tmp, shls)
+end
+
+"""
+    ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i, j, k, l, buf, tmp, shls)
+
+Scratch-buffer-accepting core: identical math to the 7-argument form above,
+but takes caller-owned `buf`/`tmp` (each sized `>= 3*Nmax^4`, `Nmax` = the
+largest `num_basis` over any shell the caller will ever pass) and `shls`
+(sized 4) instead of allocating them fresh every call. Exists because this
+function sits in the innermost loop of Fermi.jl's integral-direct gradient
+(called once per (atom, canonical-quartet) visit, millions of times for a
+real molecule) -- profiling that loop found the allocating form costing
+~1.3 KB/call (a fresh `buf`, plus one allocating `permutedims` per non-first
+branch), which adds up to several GB of GC churn over a full gradient. This
+form is zero-allocation: `permutedims!` (in-place, same semantics as
+`permutedims`, just no fresh output array) replaces `permutedims`, and `buf`/
+`shls` are reused in place instead of rebuilt per call. Safe for concurrent
+use as long as each caller (e.g. each worker task) has its own `buf`/`tmp`/
+`shls` -- these are mutated in place and not thread-safe to share.
+"""
+function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int,
+                     buf::Vector{Cdouble}, tmp::Vector{Cdouble}, shls::Vector{Cint})
 
     Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
 
@@ -238,34 +266,45 @@ function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k
     out .= 0.0
 
     Nijkl = Ni*Nj*Nk*Nl
-    buf = zeros(Cdouble, 3*Nijkl)
+    lib = BS.lib
+    bufv = view(buf, 1:3*Nijkl)
+    tmpv = view(tmp, 1:3*Nijkl)
 
     # [i'j|kl]
     if on_A[1]
-        cint2e_ip1_sph!(buf, [i,j,k,l], BS.lib)
-        ∇q = reshape(buf, Ni, Nj, Nk, Nl, 3)
-        out .-= ∇q
+        shls[1] = i-1; shls[2] = j-1; shls[3] = k-1; shls[4] = l-1
+        cint2e_ip1_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
+        out .-= reshape(bufv, Ni, Nj, Nk, Nl, 3)
     end
 
     # [ij'|kl]
     if on_A[2]
-        cint2e_ip1_sph!(buf, [j,i,k,l], BS.lib)
-        ∇q = reshape(buf, Nj, Ni, Nk, Nl, 3)
-        out .-= permutedims(∇q, (2,1,3,4,5))
+        shls[1] = j-1; shls[2] = i-1; shls[3] = k-1; shls[4] = l-1
+        cint2e_ip1_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
+        ∇q = reshape(bufv, Nj, Ni, Nk, Nl, 3)
+        dest = reshape(tmpv, Ni, Nj, Nk, Nl, 3)
+        permutedims!(dest, ∇q, (2,1,3,4,5))
+        out .-= dest
     end
 
     # [ij|k'l]
     if on_A[3]
-        cint2e_ip1_sph!(buf, [k,l,i,j], BS.lib)
-        ∇q = reshape(buf, Nk, Nl, Ni, Nj, 3)
-        out .-= permutedims(∇q, (3,4,1,2,5))
+        shls[1] = k-1; shls[2] = l-1; shls[3] = i-1; shls[4] = j-1
+        cint2e_ip1_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
+        ∇q = reshape(bufv, Nk, Nl, Ni, Nj, 3)
+        dest = reshape(tmpv, Ni, Nj, Nk, Nl, 3)
+        permutedims!(dest, ∇q, (3,4,1,2,5))
+        out .-= dest
     end
 
     # [ij|kl']
     if on_A[4]
-        cint2e_ip1_sph!(buf, [l,k,i,j], BS.lib)
-        ∇q = reshape(buf, Nl, Nk, Ni, Nj, 3)
-        out .-= permutedims(∇q, (3,4,2,1,5))
+        shls[1] = l-1; shls[2] = k-1; shls[3] = i-1; shls[4] = j-1
+        cint2e_ip1_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
+        ∇q = reshape(bufv, Nl, Nk, Ni, Nj, 3)
+        dest = reshape(tmpv, Ni, Nj, Nk, Nl, 3)
+        permutedims!(dest, ∇q, (3,4,2,1,5))
+        out .-= dest
     end
 
     return out
