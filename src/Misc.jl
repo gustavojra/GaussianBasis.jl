@@ -156,6 +156,24 @@ function workerpool(work!, allocate, inputs; chunksize,ntasks = Threads.nthreads
     end
 end
 
+"""
+    on_atom_flags(BS::BasisSet, iA::Int, shells...)
+
+Whether each of `shells` (any number of shell indices) sits on atom `iA`, as
+an `NTuple{N,Bool}`. Uses `===` rather than `==` to compare `Atom` structs --
+`Atom` is `isbits` and shells share literal object identity with
+`BS.atoms[iA]` (`BS.basis[s].atom === BS.atoms[iA]` holds whenever shell `s`
+belongs to atom `iA`), so `===` compiles to a direct bitwise compare instead
+of dispatching through `==` on each of `Atom`'s fields (including an
+`SVector` of `Float64`s) -- measured about 2x faster over many repeated
+comparisons, and this is called on the order of `nshells^4` times in the
+gradient/Hessian screening loops, so the difference is not noise.
+"""
+function on_atom_flags(BS::BasisSet, iA::Int, shells...)
+    A = BS.atoms[iA]
+    return ntuple(p -> BS.basis[shells[p]].atom === A, length(shells))
+end
+
 
 function legendre_polynomial(m::Integer,l::Integer,x)
     fmm = (-1)^m * prod((2m-1):-2:1)

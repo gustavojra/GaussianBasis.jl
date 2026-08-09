@@ -101,46 +101,60 @@ end
 
 """
     ∇2ERI_2e4c(BS::BasisSet, iA::Int, iB::Int, i::Int, j::Int, k::Int, l::Int)
+    ∇2ERI_2e4c(BS::BasisSet, Xflag::NTuple{4,Bool}, Yflag::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
 
 Shell-quartet-level dense 4-center ERI Hessian: `∂²(ij|kl)/∂R_iA∂R_iB` for
 shells `i,j,k,l` w.r.t. atoms `iA,iB`'s three Cartesian directions each, as
-an `(Ni,Nj,Nk,Nl,3,3)` block. No Schwarz screening -- see this file's header
-comment; callers wanting that should screen before calling, same as
-`∇ERI_2e4c(BS,iA,i,j,k,l)`'s callers already do.
+an `(Ni,Nj,Nk,Nl,3,3)` block. No Schwarz screening either way -- see this
+file's header comment; callers wanting that should screen before calling,
+same as `∇ERI_2e4c(BS,iA,i,j,k,l)`'s callers already do.
 
-Exactly zero, no libcint call made, whenever no shell touches `iA`, no shell
-touches `iB`, or (`iA == iB` and ALL FOUR shells sit on that one atom --
-translational invariance: the integral is then a function of the shells'
-*relative* positions only, all of which are identically zero when every
-shell is centered at the same point, so it doesn't depend on that atom's
-position at all, and neither do any of its derivatives).
+Two forms, same relationship as `∇ERI_2e4c`'s: the `iA::Int,iB::Int` form
+computes `Xflag`/`Yflag` (which of `i,j,k,l` sit on `iA`/`iB`, via `===` --
+see `on_atom_flags`) and returns the free zero (no libcint call) whenever no
+shell touches `iA`, no shell touches `iB`, or `iA==iB` with ALL FOUR shells
+on that one atom (translational invariance -- the integral is then a
+function of the shells' *relative* positions only, all identically zero
+when every shell shares one center, so it doesn't depend on that atom's
+position at all, and neither does any derivative of it). The
+`Xflag::NTuple{4,Bool},Yflag::NTuple{4,Bool}` form is the unchecked core:
+no membership computation, no zero-skip (not even the `iA==iB` translational
+-invariance case, since this form doesn't receive `iA`/`iB` at all to check
+it) -- for callers that have already screened at a higher level and
+precomputed the flags once outside a hot loop.
 """
 function ∇2ERI_2e4c(BS::BasisSet, iA::Int, iB::Int, i::Int, j::Int, k::Int, l::Int)
+    Xflag = on_atom_flags(BS, iA, i, j, k, l)
+    Yflag = on_atom_flags(BS, iB, i, j, k, l)
     Ni, Nj, Nk, Nl = num_basis.(BS.basis[[i, j, k, l]])
     out = zeros(Ni, Nj, Nk, Nl, 3, 3)
-    return ∇2ERI_2e4c!(out, BS, iA, iB, i, j, k, l)
+    (!any(Xflag) || !any(Yflag) || (iA == iB && all(Xflag))) && return out
+    return ∇2ERI_2e4c!(out, BS, Xflag, Yflag, i, j, k, l)
 end
 
 function ∇2ERI_2e4c!(out, BS::BasisSet, iA::Int, iB::Int, i::Int, j::Int, k::Int, l::Int)
-    Aat = BS.atoms[iA]
-    Bat = BS.atoms[iB]
-    shellval = (i, j, k, l)
-    Xflag = ntuple(p -> BS.basis[shellval[p]].atom == Aat, 4)
-    Yflag = ntuple(p -> BS.basis[shellval[p]].atom == Bat, 4)
+    Xflag = on_atom_flags(BS, iA, i, j, k, l)
+    Yflag = on_atom_flags(BS, iB, i, j, k, l)
+    if !any(Xflag) || !any(Yflag) || (iA == iB && all(Xflag))
+        out .= 0.0
+        return out
+    end
+    return ∇2ERI_2e4c!(out, BS, Xflag, Yflag, i, j, k, l)
+end
 
+function ∇2ERI_2e4c(BS::BasisSet, Xflag::NTuple{4,Bool}, Yflag::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
+    Ni, Nj, Nk, Nl = num_basis.(BS.basis[[i, j, k, l]])
+    out = zeros(Ni, Nj, Nk, Nl, 3, 3)
+    return ∇2ERI_2e4c!(out, BS, Xflag, Yflag, i, j, k, l)
+end
+
+function ∇2ERI_2e4c!(out, BS::BasisSet, Xflag::NTuple{4,Bool}, Yflag::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
     Ni, Nj, Nk, Nl = num_basis.(BS.basis[[i, j, k, l]])
     if size(out) != (Ni, Nj, Nk, Nl, 3, 3)
         throw(DimensionMismatch("Size of the output array needs to be ($Ni, $Nj, $Nk, $Nl, 3, 3)."))
     end
 
     out .= 0.0
-
-    if !any(Xflag) || !any(Yflag)
-        return out
-    end
-    if iA == iB && all(Xflag)
-        return out
-    end
 
     for posA in 1:4
         Xflag[posA] || continue

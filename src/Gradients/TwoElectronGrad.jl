@@ -190,26 +190,44 @@ end
 
 """
     ∇ERI_2e4c(BS::BasisSet, iA::Int, i::Int, j::Int, k::Int, l::Int)
+    ∇ERI_2e4c(BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
 
-Shell-quartet-level dense 4-center ERI gradient: `∂(ij|kl)/∂R_iA` for shells
-`i,j,k,l` w.r.t. atom `iA`'s three Cartesian directions, as an
-`(Ni,Nj,Nk,Nl,3)` block -- the same values `∇ERI_2e4c(BS,iA)` would place at
-that shell quartet's AO block. Exactly zero, no libcint call made, whenever
-`i,j,k,l` are ALL on atom `iA` or ALL off it (translational invariance --
-see this file's header comment). No permutation-symmetry propagation is
-applied here (unlike the whole-array function): call with whichever
-`(i,j,k,l)` ordering you actually need, each is computed directly.
+Two forms. The `iA::Int` form is the convenient, standalone-safe one:
+computes `on_A` (which of shells `i,j,k,l` sit on atom `iA`, via `===` --
+see `on_atom_flags`) and returns the free zero (no libcint call) when
+`i,j,k,l` are ALL on atom `iA` or ALL off it. The `on_A::NTuple{4,Bool}`
+form is the unchecked core: it does whatever `on_A` says unconditionally,
+no membership computation and no zero-skip, for callers (like Fermi.jl's
+gradient loop) that have already screened at a higher level and precomputed
+`on_A` once outside a hot loop -- calling this form on an all-on/all-off
+`on_A` does NOT raise an error, it just wastefully computes an answer of
+exactly zero the long way, so getting that screening right is entirely the
+caller's responsibility for this form.
 """
 function ∇ERI_2e4c(BS::BasisSet, iA::Int, i::Int, j::Int, k::Int, l::Int)
+    on_A = on_atom_flags(BS, iA, i, j, k, l)
     Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
     out = zeros(Ni, Nj, Nk, Nl, 3)
-    return ∇ERI_2e4c!(out, BS, iA, i, j, k, l)
+    (!any(on_A) || all(on_A)) && return out
+    return ∇ERI_2e4c!(out, BS, on_A, i, j, k, l)
 end
 
 function ∇ERI_2e4c!(out, BS::BasisSet, iA::Int, i::Int, j::Int, k::Int, l::Int)
+    on_A = on_atom_flags(BS, iA, i, j, k, l)
+    if !any(on_A) || all(on_A)
+        out .= 0.0
+        return out
+    end
+    return ∇ERI_2e4c!(out, BS, on_A, i, j, k, l)
+end
 
-    A = BS.atoms[iA]
-    on_A = (BS.basis[i].atom == A, BS.basis[j].atom == A, BS.basis[k].atom == A, BS.basis[l].atom == A)
+function ∇ERI_2e4c(BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
+    Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
+    out = zeros(Ni, Nj, Nk, Nl, 3)
+    return ∇ERI_2e4c!(out, BS, on_A, i, j, k, l)
+end
+
+function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
 
     Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
 
@@ -218,10 +236,6 @@ function ∇ERI_2e4c!(out, BS::BasisSet, iA::Int, i::Int, j::Int, k::Int, l::Int
     end
 
     out .= 0.0
-
-    if !any(on_A) || all(on_A)
-        return out
-    end
 
     Nijkl = Ni*Nj*Nk*Nl
     buf = zeros(Cdouble, 3*Nijkl)
