@@ -206,6 +206,18 @@ be for the energy integral.
 | `∇2nuclear(bset, iA, iB)` | `(nbas,nbas,3,3)` | Nuclear attraction Hessian |
 | `∇2ERI_2e2c(auxbset, iA, iB)` | `(naux,naux,3,3)` | 2-center (auxiliary metric) ERI Hessian (density fitting) |
 | `∇2ERI_2e3c(bset, auxbset, iA, iB)` | `(nbas,nbas,naux,3,3)` | 3-center ERI Hessian (density fitting) |
+| `∇2ERI_2e4c(bset, iA, iB, i, j, k, l)` | `(Ni,Nj,Nk,Nl,3,3)` | Shell-quartet-level dense 4-center ERI Hessian -- see below |
+
+`∇2ERI_2e4c` has no whole-array form -- unlike the other Hessian integrals
+above, it's shell-quartet-level only, mirroring `∇ERI_2e4c(bset,iA,i,j,k,l)`
+one derivative order up. No Schwarz screening happens inside it (same split
+as the gradient version): it's meant to be called from a caller's own
+screened, shell-quartet loop, not looped over every quartet blindly. It's
+exactly zero, no libcint call made, whenever no shell touches `iA`, no shell
+touches `iB`, or (`iA==iB` and all four shells sit on that one atom --
+translational invariance, same reasoning as the gradient case, just also
+killing the *second* derivative here since the integral doesn't depend on
+that atom's position at all in this degenerate case).
 
 # Advanced Usage
 

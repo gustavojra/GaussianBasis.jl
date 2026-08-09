@@ -92,3 +92,20 @@ end
         @test H ≈ permutedims(H, (2,1,3,4,5))
     end
 end
+
+@testset "∂²(μν|λσ)/∂X² shell-quartet" begin
+    # Shell-quartet-level dense 4-center ERI Hessian (no whole-array
+    # counterpart -- ∇2ERI_2e4c is meant to be called per surviving quartet
+    # by a caller doing its own screening, see this function's docstring).
+    # Bounded shell range to keep this test fast -- exhaustive nshells^4 x
+    # natm^2 isn't needed to catch an orientation/indexing bug.
+    nsh = min(bs.nshells, 4)
+    for iA = 1:length(atoms), iB = 1:length(atoms)
+        for i = 1:nsh, j = 1:nsh, k = 1:nsh, l = 1:nsh
+            d2 = ∇2ERI_2e4c(bs, iA, iB, i, j, k, l)
+            for dir = 1:3
+                @test d2[:,:,:,:,:,dir] ≈ ∇2FD_ERI_2e4c(bs, iA, iB, i, j, k, l, dir) atol=1e-6
+            end
+        end
+    end
+end
