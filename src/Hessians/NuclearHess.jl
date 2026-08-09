@@ -91,6 +91,17 @@ function ∇2nuclear!(out, BS::BasisSet, iA, iB)
     ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
     Nmax = maximum(Nvals)
     buf = zeros(Cdouble, 9*Nmax^2)
+    # Reused across every (nucleus, shell pair) below instead of allocating
+    # bb/bk/kk/bkT/block fresh each time -- same rationale as
+    # OneElectronHess.jl's fix. bo/bo_T/ko/ko_T/oo (below) are handled via
+    # fused broadcast (`block .+= Zc .* (bb .+ bk)`, etc.) instead of naming
+    # an intermediate array, so no separate buffers are needed for those.
+    bb_buf = zeros(Cdouble, Nmax, Nmax, 3, 3)
+    bk_buf = zeros(Cdouble, Nmax, Nmax, 3, 3)
+    kk_buf = zeros(Cdouble, Nmax, Nmax, 3, 3)
+    bkT_buf = zeros(Cdouble, Nmax, Nmax, 3, 3)
+    block_buf = zeros(Cdouble, Nmax, Nmax, 3, 3)
+    shls = zeros(Cint, 2)
 
     nuclei = Aat == Bat ? (Aat,) : (Aat, Bat)
 
@@ -130,9 +141,19 @@ function ∇2nuclear!(out, BS::BasisSet, iA, iB)
                 joff = ao_offset[j]
                 J = (joff+1):(joff+Nj)
                 Nij = Ni*Nj
+                lib = BS.lib
 
-                cint1e_ipiprinv_sph!(buf, Cint.([i,j].-1), BS.lib.atm, BS.lib.natm, BS.lib.bas, BS.lib.nbas, env_c)
-                bb = reshape(copy(view(buf, 1:9*Nij)), Ni, Nj, 3, 3)
+                bb = reshape(view(bb_buf, 1:Ni, 1:Nj, :, :), Ni, Nj, 3, 3)
+                bk = reshape(view(bk_buf, 1:Ni, 1:Nj, :, :), Ni, Nj, 3, 3)
+                kk = reshape(view(kk_buf, 1:Ni, 1:Nj, :, :), Ni, Nj, 3, 3)
+                bkT = reshape(view(bkT_buf, 1:Ni, 1:Nj, :, :), Ni, Nj, 3, 3)
+                block = view(block_buf, 1:Ni, 1:Nj, :, :)
+                block .= 0.0
+
+                shls[1] = i-1; shls[2] = j-1
+                bufv = view(buf, 1:9*Nij)
+                cint1e_ipiprinv_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, env_c)
+                bb .= reshape(bufv, Ni, Nj, 3, 3)
 
                 # cint1e_iprinvip_sph!'s two derivative-component axes come out
                 # in (ket,bra) order, not (bra,ket) -- unlike the same-shell
@@ -142,13 +163,12 @@ function ∇2nuclear!(out, BS::BasisSet, iA, iB)
                 # no reason to be symmetric under swapping those two axes, so
                 # the raw layout must be corrected explicitly (verified
                 # against a direct finite difference of cint1e_iprinv_sph!).
-                cint1e_iprinvip_sph!(buf, Cint.([i,j].-1), BS.lib.atm, BS.lib.natm, BS.lib.bas, BS.lib.nbas, env_c)
-                bk = permutedims(reshape(copy(view(buf, 1:9*Nij)), Ni, Nj, 3, 3), (1,2,4,3))
+                cint1e_iprinvip_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, env_c)
+                permutedims!(bk, reshape(bufv, Ni, Nj, 3, 3), (1,2,4,3))
 
-                cint1e_ipiprinv_sph!(buf, Cint.([j,i].-1), BS.lib.atm, BS.lib.natm, BS.lib.bas, BS.lib.nbas, env_c)
-                kk = permutedims(reshape(copy(view(buf, 1:9*Nij)), Nj, Ni, 3, 3), (2,1,3,4))
-
-                block = zeros(Cdouble, Ni, Nj, 3, 3)
+                shls[1] = j-1; shls[2] = i-1
+                cint1e_ipiprinv_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, env_c)
+                permutedims!(kk, reshape(bufv, Nj, Ni, 3, 3), (2,1,3,4))
 
                 # bk is NOT symmetric under its own (3,3)-axis swap (unlike
                 # bb/kk, which are same-point mixed partials and always are),
@@ -156,25 +176,20 @@ function ∇2nuclear!(out, BS::BasisSet, iA, iB)
                 # d2/dket_p dop_q = Zc*(bk^T+kk)[p,q] genuinely differ from
                 # their (p,q)<->(q,k) counterparts -- each of the two
                 # activation sites below needs its own orientation.
-                bkT = permutedims(bk, (1,2,4,3))
+                permutedims!(bkT, bk, (1,2,4,3))
 
                 if need_bo
-                    bo = Zc .* (bb .+ bk)      # d2/dbra_m dop_k
-                    bo_T = Zc .* (bb .+ bkT)   # d2/dop_m dbra_k = (d2/dbra_k dop_m)
-                    (X_i && Cb) && (block .+= bo)
-                    (Ca && Y_i) && (block .+= bo_T)
+                    (X_i && Cb) && (block .+= Zc .* (bb .+ bk))    # d2/dbra_m dop_k
+                    (Ca && Y_i) && (block .+= Zc .* (bb .+ bkT))   # d2/dop_m dbra_k
                 end
 
                 if need_ko
-                    ko = Zc .* (bk .+ kk)      # d2/dop_m dket_k = (d2/dket_k dop_m)
-                    ko_T = Zc .* (bkT .+ kk)   # d2/dket_m dop_k
-                    (X_j && Cb) && (block .+= ko_T)
-                    (Ca && Y_j) && (block .+= ko)
+                    (X_j && Cb) && (block .+= Zc .* (bkT .+ kk))  # d2/dket_m dop_k
+                    (Ca && Y_j) && (block .+= Zc .* (bk .+ kk))   # d2/dop_m dket_k
                 end
 
                 if need_oo
-                    oo = -Zc .* (bb .+ bk .+ bkT .+ kk)
-                    block .+= oo
+                    block .+= (-Zc) .* (bb .+ bk .+ bkT .+ kk)
                 end
 
                 out[I,J,:,:] .+= block

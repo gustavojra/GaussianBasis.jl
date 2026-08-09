@@ -47,6 +47,29 @@ function eri_hess_kernel(kern, bset::BasisSet, a, b, c, d)
     return permutedims(reshape(buf, Na, Nb, Nc, Nd, 3, 3), (1, 2, 3, 4, 6, 5))
 end
 
+# Scratch-buffer-accepting core, same math as `eri_hess_kernel` above but
+# writing the raw libcint call into `buf` and the axis-swapped ((...,6,5))
+# result into `dest` (both caller-owned, reused across many calls) instead of
+# allocating fresh each time -- see this file's header comment and
+# `∇ERI_2e4c!`'s scratch-buffer docstring in `Gradients/TwoElectronGrad.jl`
+# for the motivation (profiling found the allocating chain here, up to 16
+# calls deep per shell quartet via `∇2ERI_2e4c!`'s posA/posB loop, costing
+# several times more per-call allocation than the gradient's already-fixed
+# 4-branch case). `dest` must be sized `>= 9*Na*Nb*Nc*Nd`; returns a reshaped
+# view into it.
+function eri_hess_kernel!(buf::Vector{Cdouble}, dest::Vector{Cdouble}, shls::Vector{Cint}, kern, bset::BasisSet, a, b, c, d)
+    Na, Nb, Nc, Nd = num_basis.(bset.basis[[a, b, c, d]])
+    n = Na * Nb * Nc * Nd * 9
+    shls[1] = a - 1; shls[2] = b - 1; shls[3] = c - 1; shls[4] = d - 1
+    lib = bset.lib
+    bufv = view(buf, 1:n)
+    kern(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
+    src = reshape(bufv, Na, Nb, Nc, Nd, 3, 3)
+    destv = reshape(view(dest, 1:n), Na, Nb, Nc, Nd, 3, 3)
+    permutedims!(destv, src, (1, 2, 3, 4, 6, 5))
+    return destv
+end
+
 # Second derivative of the (p,q,r,s) integral w.r.t. the shells at argument
 # positions posA, posB (1..4, corresponding to p,q,r,s respectively), returned
 # as a (Np,Nq,Nr,Ns,3,3) tensor in (p,q,r,s) AO-axis order regardless of which
@@ -80,6 +103,57 @@ function eri_hess_cross(bset::BasisSet, p, q, r, s, posA::Int, posB::Int)
     return swp ? permutedims(d, (1, 2, 3, 4, 6, 5)) : d
 end
 
+# Scratch-buffer core for `eri_hess_cross` -- `buf`/`t1`/`t2` are caller-owned
+# flat `Vector{Cdouble}` scratch (each sized `>= 9*Nmax^4`), `shls` a reused
+# `Vector{Cint}` of length 4. Mirrors the allocating version's branch logic
+# and permutation specs exactly (mechanical `permutedims`->`permutedims!`
+# substitution, verified numerically against it -- see this file's test
+# coverage), just tracking which of `t1`/`t2` currently holds the live result
+# so the final (posA>posB) swap never targets its own source in place.
+function eri_hess_cross!(buf::Vector{Cdouble}, t1::Vector{Cdouble}, t2::Vector{Cdouble}, shls::Vector{Cint},
+                          bset::BasisSet, p, q, r, s, posA::Int, posB::Int)
+    swp = posA > posB
+    a, b = swp ? (posB, posA) : (posA, posB)
+    Np, Nq, Nr, Ns = num_basis.(bset.basis[[p, q, r, s]])
+    n = Np * Nq * Nr * Ns * 9
+
+    d, dbuf = if (a, b) == (1, 2)
+        (eri_hess_kernel!(buf, t1, shls, cint2e_ipvip1_sph!, bset, p, q, r, s), t1)
+    elseif (a, b) == (3, 4)
+        raw = eri_hess_kernel!(buf, t1, shls, cint2e_ipvip1_sph!, bset, r, s, p, q)
+        dest = reshape(view(t2, 1:n), Np, Nq, Nr, Ns, 3, 3)
+        permutedims!(dest, raw, (3, 4, 1, 2, 5, 6))
+        (dest, t2)
+    elseif (a, b) == (1, 3)
+        (eri_hess_kernel!(buf, t1, shls, cint2e_ip1ip2_sph!, bset, p, q, r, s), t1)
+    elseif (a, b) == (1, 4)
+        raw = eri_hess_kernel!(buf, t1, shls, cint2e_ip1ip2_sph!, bset, p, q, s, r)
+        dest = reshape(view(t2, 1:n), Np, Nq, Nr, Ns, 3, 3)
+        permutedims!(dest, raw, (1, 2, 4, 3, 5, 6))
+        (dest, t2)
+    elseif (a, b) == (2, 3)
+        raw = eri_hess_kernel!(buf, t1, shls, cint2e_ip1ip2_sph!, bset, q, p, r, s)
+        dest = reshape(view(t2, 1:n), Np, Nq, Nr, Ns, 3, 3)
+        permutedims!(dest, raw, (2, 1, 3, 4, 5, 6))
+        (dest, t2)
+    elseif (a, b) == (2, 4)
+        raw = eri_hess_kernel!(buf, t1, shls, cint2e_ip1ip2_sph!, bset, q, p, s, r)
+        dest = reshape(view(t2, 1:n), Np, Nq, Nr, Ns, 3, 3)
+        permutedims!(dest, raw, (2, 1, 4, 3, 5, 6))
+        (dest, t2)
+    else
+        throw(ArgumentError("unexpected position pair ($a,$b)"))
+    end
+
+    if swp
+        other = dbuf === t1 ? t2 : t1
+        dest = reshape(view(other, 1:n), Np, Nq, Nr, Ns, 3, 3)
+        permutedims!(dest, d, (1, 2, 3, 4, 6, 5))
+        return dest
+    end
+    return d
+end
+
 # Same-shell second derivative: both derivatives land on the shell at position
 # posK (1..4). Returned in (p,q,r,s) AO-axis order.
 function eri_hess_same(bset::BasisSet, p, q, r, s, posK::Int)
@@ -94,6 +168,34 @@ function eri_hess_same(bset::BasisSet, p, q, r, s, posK::Int)
     elseif posK == 4
         raw = eri_hess_kernel(cint2e_ipip1_sph!, bset, s, r, p, q)
         permutedims(raw, (3, 4, 2, 1, 5, 6))
+    else
+        throw(ArgumentError("posK must be 1..4"))
+    end
+end
+
+# Scratch-buffer core for `eri_hess_same`, same relationship to it as
+# `eri_hess_cross!` has to `eri_hess_cross`.
+function eri_hess_same!(buf::Vector{Cdouble}, t1::Vector{Cdouble}, t2::Vector{Cdouble}, shls::Vector{Cint},
+                         bset::BasisSet, p, q, r, s, posK::Int)
+    Np, Nq, Nr, Ns = num_basis.(bset.basis[[p, q, r, s]])
+    n = Np * Nq * Nr * Ns * 9
+    if posK == 1
+        return eri_hess_kernel!(buf, t1, shls, cint2e_ipip1_sph!, bset, p, q, r, s)
+    elseif posK == 2
+        raw = eri_hess_kernel!(buf, t1, shls, cint2e_ipip1_sph!, bset, q, p, r, s)
+        dest = reshape(view(t2, 1:n), Np, Nq, Nr, Ns, 3, 3)
+        permutedims!(dest, raw, (2, 1, 3, 4, 5, 6))
+        return dest
+    elseif posK == 3
+        raw = eri_hess_kernel!(buf, t1, shls, cint2e_ipip1_sph!, bset, r, s, p, q)
+        dest = reshape(view(t2, 1:n), Np, Nq, Nr, Ns, 3, 3)
+        permutedims!(dest, raw, (3, 4, 1, 2, 5, 6))
+        return dest
+    elseif posK == 4
+        raw = eri_hess_kernel!(buf, t1, shls, cint2e_ipip1_sph!, bset, s, r, p, q)
+        dest = reshape(view(t2, 1:n), Np, Nq, Nr, Ns, 3, 3)
+        permutedims!(dest, raw, (3, 4, 2, 1, 5, 6))
+        return dest
     else
         throw(ArgumentError("posK must be 1..4"))
     end
@@ -150,6 +252,31 @@ end
 
 function ∇2ERI_2e4c!(out, BS::BasisSet, Xflag::NTuple{4,Bool}, Yflag::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
     Ni, Nj, Nk, Nl = num_basis.(BS.basis[[i, j, k, l]])
+    Nijkl = Ni * Nj * Nk * Nl
+    buf = zeros(Cdouble, 9 * Nijkl)
+    t1 = zeros(Cdouble, 9 * Nijkl)
+    t2 = zeros(Cdouble, 9 * Nijkl)
+    shls = zeros(Cint, 4)
+    return ∇2ERI_2e4c!(out, BS, Xflag, Yflag, i, j, k, l, buf, t1, t2, shls)
+end
+
+"""
+    ∇2ERI_2e4c!(out, BS::BasisSet, Xflag, Yflag, i, j, k, l, buf, t1, t2, shls)
+
+Scratch-buffer-accepting core, same relationship to the 7-argument form
+above as `Gradients/TwoElectronGrad.jl`'s `∇ERI_2e4c!` has to its own
+9-argument scratch form: `buf`/`t1`/`t2` (each `>= 9*Nmax^4`, `Nmax` = the
+largest `num_basis` over any shell the caller will ever pass) and `shls`
+(length 4) are caller-owned and reused across every call instead of being
+allocated fresh -- this loop calls `eri_hess_same!`/`eri_hess_cross!` up to
+16 times per shell quartet (4x4 posA/posB combinations, vs. the gradient's
+4 branches), so the old allocating path here cost proportionally more GC
+churn per call. Safe for concurrent use as long as each caller (e.g. each
+worker task) has its own scratch buffers.
+"""
+function ∇2ERI_2e4c!(out, BS::BasisSet, Xflag::NTuple{4,Bool}, Yflag::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int,
+                      buf::Vector{Cdouble}, t1::Vector{Cdouble}, t2::Vector{Cdouble}, shls::Vector{Cint})
+    Ni, Nj, Nk, Nl = num_basis.(BS.basis[[i, j, k, l]])
     if size(out) != (Ni, Nj, Nk, Nl, 3, 3)
         throw(DimensionMismatch("Size of the output array needs to be ($Ni, $Nj, $Nk, $Nl, 3, 3)."))
     end
@@ -160,8 +287,8 @@ function ∇2ERI_2e4c!(out, BS::BasisSet, Xflag::NTuple{4,Bool}, Yflag::NTuple{4
         Xflag[posA] || continue
         for posB in 1:4
             Yflag[posB] || continue
-            d = posA == posB ? eri_hess_same(BS, i, j, k, l, posA) :
-                                eri_hess_cross(BS, i, j, k, l, posA, posB)
+            d = posA == posB ? eri_hess_same!(buf, t1, t2, shls, BS, i, j, k, l, posA) :
+                                eri_hess_cross!(buf, t1, t2, shls, BS, i, j, k, l, posA, posB)
             out .+= d
         end
     end

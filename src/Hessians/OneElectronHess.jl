@@ -65,6 +65,15 @@ function ∇21e!(out, BS::BasisSet, compute::String, iA, iB)
     ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
     Nmax = maximum(Nvals)
     buf = zeros(Cdouble, 9*Nmax^2)
+    # Reused across every shell pair below (each of size <= Nmax^2*9) instead
+    # of allocating `block`/a permuted temporary fresh per pair -- same
+    # rationale as the 2-electron scratch-buffer fixes in TwoElectronGrad.jl/
+    # TwoElectronFourCenterHess.jl, just at O(nshells^2) instead of
+    # O(nshells^4) calls (smaller per-call footprint, but a real allocation
+    # source over a full Hessian's worth of atom pairs nonetheless).
+    block = zeros(Cdouble, Nmax, Nmax, 3, 3)
+    permbuf = zeros(Cdouble, Nmax, Nmax, 3, 3)
+    shls = zeros(Cint, 2)
 
     @inbounds for i in 1:BS.nshells
         atom_i = BS.basis[i].atom
@@ -90,12 +99,16 @@ function ∇21e!(out, BS::BasisSet, compute::String, iA, iB)
             joff = ao_offset[j]
             J = (joff+1):(joff+Nj)
             Nij = Ni*Nj
+            lib = BS.lib
 
-            block = zeros(Cdouble, Ni, Nj, 3, 3)
+            blockv = view(block, 1:Ni, 1:Nj, :, :)
+            blockv .= 0.0
 
             if X_i && Y_i
-                ipip!(buf, [i,j], BS.lib)
-                block .+= reshape(view(buf, 1:9*Nij), Ni, Nj, 3, 3)
+                shls[1] = i-1; shls[2] = j-1
+                bufv = view(buf, 1:9*Nij)
+                ipip!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
+                blockv .+= reshape(bufv, Ni, Nj, 3, 3)
             end
 
             if (X_i && Y_j) || (X_j && Y_i)
@@ -111,19 +124,29 @@ function ∇21e!(out, BS::BasisSet, compute::String, iA, iB)
                 # the two placements need genuinely different orientations:
                 # X_i&&Y_j wants d2/d(shell i=A)_m d(shell j=B)_k = raw[:,:,k,m]
                 # X_j&&Y_i wants d2/d(shell j=A)_m d(shell i=B)_k = raw[:,:,m,k]
-                ipXip!(buf, [i,j], BS.lib)
-                raw = reshape(view(buf, 1:9*Nij), Ni, Nj, 3, 3)
-                X_i && Y_j && (block .+= permutedims(raw, (1,2,4,3)))
-                X_j && Y_i && (block .+= raw)
+                shls[1] = i-1; shls[2] = j-1
+                bufv = view(buf, 1:9*Nij)
+                ipXip!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
+                raw = reshape(bufv, Ni, Nj, 3, 3)
+                if X_i && Y_j
+                    permbufv = reshape(view(permbuf, 1:9*Nij), Ni, Nj, 3, 3)
+                    permutedims!(permbufv, raw, (1,2,4,3))
+                    blockv .+= permbufv
+                end
+                X_j && Y_i && (blockv .+= raw)
             end
 
             if X_j && Y_j
-                ipip!(buf, [j,i], BS.lib)
-                blockT = reshape(view(buf, 1:9*Nij), Nj, Ni, 3, 3)
-                block .+= permutedims(blockT, (2,1,3,4))
+                shls[1] = j-1; shls[2] = i-1
+                bufv = view(buf, 1:9*Nij)
+                ipip!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
+                blockT = reshape(bufv, Nj, Ni, 3, 3)
+                permbufv = reshape(view(permbuf, 1:9*Nij), Ni, Nj, 3, 3)
+                permutedims!(permbufv, blockT, (2,1,3,4))
+                blockv .+= permbufv
             end
 
-            out[I,J,:,:] .+= block
+            out[I,J,:,:] .+= blockv
         end
     end
 
