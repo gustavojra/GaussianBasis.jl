@@ -207,23 +207,17 @@ end
 
 Shell-quartet-level dense 4-center ERI Hessian: `∂²(ij|kl)/∂R_iA∂R_iB` for
 shells `i,j,k,l` w.r.t. atoms `iA,iB`'s three Cartesian directions each, as
-an `(Ni,Nj,Nk,Nl,3,3)` block. No Schwarz screening either way -- see this
-file's header comment; callers wanting that should screen before calling,
-same as `∇ERI_2e4c(BS,iA,i,j,k,l)`'s callers already do.
+an `(Ni,Nj,Nk,Nl,3,3)` block. No Schwarz screening either way -- callers
+wanting that should screen before calling.
 
 Two forms, same relationship as `∇ERI_2e4c`'s: the `iA::Int,iB::Int` form
-computes `Xflag`/`Yflag` (which of `i,j,k,l` sit on `iA`/`iB`, via `===` --
-see `on_atom_flags`) and returns the free zero (no libcint call) whenever no
-shell touches `iA`, no shell touches `iB`, or `iA==iB` with ALL FOUR shells
-on that one atom (translational invariance -- the integral is then a
-function of the shells' *relative* positions only, all identically zero
-when every shell shares one center, so it doesn't depend on that atom's
-position at all, and neither does any derivative of it). The
-`Xflag::NTuple{4,Bool},Yflag::NTuple{4,Bool}` form is the unchecked core:
-no membership computation, no zero-skip (not even the `iA==iB` translational
--invariance case, since this form doesn't receive `iA`/`iB` at all to check
-it) -- for callers that have already screened at a higher level and
-precomputed the flags once outside a hot loop.
+computes `Xflag`/`Yflag` (which of `i,j,k,l` sit on `iA`/`iB`) and returns
+the free zero (no libcint call) whenever no shell touches `iA`, no shell
+touches `iB`, or `iA==iB` with all four shells on that one atom
+(translational invariance). The `Xflag,Yflag::NTuple{4,Bool}` form is the
+unchecked core: no membership computation, no zero-skip -- for callers
+that have already screened at a higher level and precomputed the flags
+once outside a hot loop.
 """
 function ∇2ERI_2e4c(BS::BasisSet, iA::Int, iB::Int, i::Int, j::Int, k::Int, l::Int)
     Xflag = on_atom_flags(BS, iA, i, j, k, l)
@@ -263,19 +257,19 @@ end
 """
     ∇2ERI_2e4c!(out, BS::BasisSet, Xflag, Yflag, i, j, k, l, buf, t1, t2, shls)
 
-Scratch-buffer-accepting core, same relationship to the 7-argument form
-above as `Gradients/TwoElectronGrad.jl`'s `∇ERI_2e4c!` has to its own
-9-argument scratch form: `buf`/`t1`/`t2` (each `>= 9*Nmax^4`, `Nmax` = the
-largest `num_basis` over any shell the caller will ever pass) and `shls`
-(length 4) are caller-owned and reused across every call instead of being
-allocated fresh -- this loop calls `eri_hess_same!`/`eri_hess_cross!` up to
-16 times per shell quartet (4x4 posA/posB combinations, vs. the gradient's
-4 branches), so the old allocating path here cost proportionally more GC
-churn per call. Safe for concurrent use as long as each caller (e.g. each
-worker task) has its own scratch buffers.
+Scratch-buffer-accepting core: `buf`/`t1`/`t2` (each `>= 9*Nmax^4`, `Nmax`
+= the largest `num_basis` over any shell the caller will ever pass) and
+`shls` (length 4) are caller-owned and reused across every call instead of
+allocated fresh. Not thread-safe to share: each concurrent caller (e.g.
+each worker task) needs its own scratch buffers.
 """
 function ∇2ERI_2e4c!(out, BS::BasisSet, Xflag::NTuple{4,Bool}, Yflag::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int,
                       buf::Vector{Cdouble}, t1::Vector{Cdouble}, t2::Vector{Cdouble}, shls::Vector{Cint})
+    # This loop calls eri_hess_same!/eri_hess_cross! up to 16 times per
+    # shell quartet (4x4 posA/posB combinations, vs. the gradient's 4
+    # branches), so the old allocating path cost proportionally more GC
+    # churn per call -- see Gradients/TwoElectronGrad.jl's ∇ERI_2e4c! for
+    # the analogous gradient-side fix.
     Ni, Nj, Nk, Nl = num_basis.(BS.basis[[i, j, k, l]])
     if size(out) != (Ni, Nj, Nk, Nl, 3, 3)
         throw(DimensionMismatch("Size of the output array needs to be ($Ni, $Nj, $Nk, $Nl, 3, 3)."))

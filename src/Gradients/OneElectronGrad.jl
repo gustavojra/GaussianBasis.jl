@@ -312,22 +312,18 @@ AO block.
 Unlike `∇overlap`/`∇kinetic`, no case is ever a free/skippable zero: `V_PQ`
 sums the potential over every nucleus, so even a shell pair with neither
 `P` nor `Q` on atom `iA` still has a nonzero derivative through the
-`Z_iA/|r-R_iA|` operator term itself moving. Four cases instead, mirroring
-`∇nuclear!`'s three-loop-plus-final-symmetrize structure exactly (derived
-by tracing that already-validated code for an arbitrary pair, see this
-file's header comment) -- `K_A(p,q)`/`K_notA(p,q)` below are the bra-derivative
-`cint1e_ipnuc_sph!` kernel at shell pair `(p,q)` using only atom `iA`'s
-charge / every charge except `iA`'s, respectively:
+`Z_iA/|r-R_iA|` operator term itself moving. `K_A(p,q)`/`K_notA(p,q)`
+below are the bra-derivative `cint1e_ipnuc_sph!` kernel at shell pair
+`(p,q)` using only atom `iA`'s charge / every charge except `iA`'s:
 
   - P,Q both on `iA`:    `-K_notA(P,Q) - K_notA(Q,P)ᵀ`
   - P,Q both off `iA`:    `K_A(P,Q) + K_A(Q,P)ᵀ`
   - P on `iA`, Q off:    `-K_notA(P,Q) + K_A(Q,P)ᵀ`
   - P off `iA`, Q on:     `K_A(P,Q) - K_notA(Q,P)ᵀ`
 
-(transpose over the two AO axes, per `k`). Builds its own fudged
-nuclear-charge arrays per call -- fine for a one-off shell pair, but
-`∇nuclear!`'s whole-array loop builds them once and reuses them across
-every pair instead of calling this function `nshells^2` times.
+(transpose over the two AO axes, per `k`). Prefer `∇nuclear!(out,BS,iA)`
+(the whole-array form) when you need many shell pairs for the same atom --
+this one rebuilds the fudged nuclear-charge arrays on every call.
 """
 function ∇nuclear(BS::BasisSet, iA::Int, P::Int, Q::Int)
     Np = num_basis(BS.basis[P])

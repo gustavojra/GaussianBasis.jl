@@ -242,20 +242,18 @@ end
 Scratch-buffer-accepting core: identical math to the 7-argument form above,
 but takes caller-owned `buf`/`tmp` (each sized `>= 3*Nmax^4`, `Nmax` = the
 largest `num_basis` over any shell the caller will ever pass) and `shls`
-(sized 4) instead of allocating them fresh every call. Exists because this
-function sits in the innermost loop of Fermi.jl's integral-direct gradient
-(called once per (atom, canonical-quartet) visit, millions of times for a
-real molecule) -- profiling that loop found the allocating form costing
-~1.3 KB/call (a fresh `buf`, plus one allocating `permutedims` per non-first
-branch), which adds up to several GB of GC churn over a full gradient. This
-form is zero-allocation: `permutedims!` (in-place, same semantics as
-`permutedims`, just no fresh output array) replaces `permutedims`, and `buf`/
-`shls` are reused in place instead of rebuilt per call. Safe for concurrent
-use as long as each caller (e.g. each worker task) has its own `buf`/`tmp`/
-`shls` -- these are mutated in place and not thread-safe to share.
+(sized 4) instead of allocating them fresh every call -- zero-allocation,
+for callers in a hot per-quartet loop. Not thread-safe to share: each
+concurrent caller (e.g. each worker task) needs its own `buf`/`tmp`/`shls`.
 """
 function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int,
                      buf::Vector{Cdouble}, tmp::Vector{Cdouble}, shls::Vector{Cint})
+    # Exists because this sits in the innermost loop of Fermi.jl's
+    # integral-direct gradient (called once per (atom, canonical-quartet)
+    # visit, millions of times for a real molecule) -- profiling found the
+    # allocating form costing ~1.3 KB/call (a fresh buf, plus one
+    # allocating permutedims per non-first branch), several GB of GC churn
+    # over a full gradient. permutedims! (in-place) replaces permutedims.
 
     Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
 
@@ -314,15 +312,11 @@ end
     schwarz_bounds(BS::BasisSet)
 
 Per-shell-pair Cauchy-Schwarz screening bound `σ_ij := sqrt(max|(ij|ij)|)`,
-computed from the ordinary (undifferentiated) integrals -- an O(nshells^2)
-pass over diagonal shell quartets, independent of any nuclear derivative.
-Used by both `sparseERI_2e4c` and `∇sparseERI_2e4c` to skip shell quartets
-whose bound falls below a cutoff. `∇sparseERI_2e4c` is typically called once
-per atom (a full gradient loops over every atom, `eri_grad_JK` does the same
-inside CPHF); since this bound doesn't depend on which atom is being
-differentiated, callers making several `∇sparseERI_2e4c` calls should
-compute it once via this function and pass it through via the `ij_vals`/
-`σvals` kwargs, instead of paying this cost again for every atom.
+used by both `sparseERI_2e4c` and `∇sparseERI_2e4c` to skip shell quartets
+whose bound falls below a cutoff. Independent of which atom is being
+differentiated -- callers making several `∇sparseERI_2e4c` calls (e.g.
+looping over atoms) should compute it once and pass it through via the
+`ij_vals`/`σvals` kwargs rather than recomputing it each time.
 """
 function schwarz_bounds(BS::BasisSet)
     Nvals = num_basis.(BS.basis)
@@ -346,34 +340,31 @@ end
     ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff=1e-12; ij_vals=nothing, σvals=nothing)
 
 Derivative (w.r.t. atom `iA`'s three Cartesian directions) of the unique
-(permutation-compressed) two-electron four-center integrals, screened the
-same way `sparseERI_2e4c` screens the energy integrals: a shell quartet is
-skipped up front whenever `σ_ij*σ_kl <= cutoff` (see `schwarz_bounds`). This
-is a valid proxy for the derivative too -- differentiating a Gaussian-product
-ERI w.r.t. a nuclear center only introduces a bounded polynomial prefactor
-via the chain rule, the exponential shell-pair falloff with distance that
-makes the bound work for the energy integral is unchanged for its
-derivative. Quartets entirely on atom `iA` or entirely off it are also
-skipped (exactly zero by translational invariance, not a numerical cutoff).
-
-`ij_vals`/`σvals` default to a fresh `schwarz_bounds(BS)` call if not
-supplied -- pass a precomputed pair in when calling this repeatedly across
-atoms (see `schwarz_bounds`'s docstring) to avoid recomputing it every time.
-
-Results are accumulated into a growable buffer (`sizehint!`ed from a cheap
-upper-bound estimate on the number of surviving elements, no extra integral
-evaluations needed for the estimate) rather than a fixed array pre-sized at
-the full theoretical unique-element count -- peak memory scales with the
-number of surviving elements instead of nbas^4/8. Unlike `sparseERI_2e4c`
-(called once per SCF run, amortizing its own screening/threading cost over
-every Fock build that follows), this is typically called once per atom per
-gradient/Hessian evaluation -- there's much less work to amortize a
-thread-pool's synchronization overhead over, and measurement backed up the
-theory: at default (single-)thread count, threading this made it ~2x
-*slower* than a plain loop for a small molecule, so this stays serial.
+(permutation-compressed) two-electron four-center integrals, Schwarz-
+screened the same way `sparseERI_2e4c` screens the energy integrals (see
+`schwarz_bounds`). `ij_vals`/`σvals` default to a fresh `schwarz_bounds(BS)`
+call if not supplied -- pass a precomputed pair in when calling this
+repeatedly across atoms to avoid recomputing it every time.
 """
 function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, σvals = nothing)
-
+    # The energy-integral Schwarz bound is a valid screening proxy for the
+    # derivative too -- differentiating a Gaussian-product ERI w.r.t. a
+    # nuclear center only introduces a bounded polynomial prefactor via the
+    # chain rule, so the exponential shell-pair falloff with distance that
+    # makes the bound work for the energy integral is unchanged for its
+    # derivative. Quartets entirely on atom iA or entirely off it are also
+    # skipped (exactly zero by translational invariance, not a cutoff).
+    #
+    # Results accumulate into a growable buffer (sizehint!ed from a cheap
+    # upper-bound estimate, no extra integral evaluations needed for it)
+    # rather than a fixed array pre-sized at the full theoretical unique-
+    # element count -- peak memory scales with surviving elements, not
+    # nbas^4/8. Deliberately NOT threaded, unlike sparseERI_2e4c (called
+    # once per SCF run, amortizing threading overhead over every Fock build
+    # that follows): this is typically called once per atom per gradient/
+    # Hessian evaluation, too little work per call to amortize a thread
+    # pool's synchronization cost -- measured ~2x slower threaded than
+    # serial for a small molecule.
     A = BS.atoms[iA]
 
     # Shell indexes for basis in the atom A
