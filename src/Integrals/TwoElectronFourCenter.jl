@@ -1,6 +1,19 @@
-# Returned elements are in whatever order tasks happened to finish in, not
-# sorted by index -- callers that need a canonical unique integral once (like
-# Fock builds) don't care about order, but don't rely on it either.
+"""
+    sparseERI_2e4c(BS::BasisSet, cutoff=1e-12) -> (indexes, values)
+
+Compute the unique, permutationally non-redundant two-electron four-center
+integrals `(ij|kl)` for `BS` (chemist's notation), applying Cauchy-Schwarz
+shell-pair screening and discarding any integral with `abs(value) <= cutoff`.
+
+Returns a pair `(indexes, values)`: `indexes` is a `Vector{NTuple{4,Int16}}`
+of `(I,J,K,L)` AO indices (1-based) and `values` the corresponding
+`Vector{Float64}` of integral values, `indexes[n]` paired with `values[n]`.
+Only one representative of each permutationally-equivalent AO quartet is
+returned. Element order is not sorted or otherwise guaranteed (it depends on
+how the underlying work is split across threads) -- callers that need a
+canonical unique integral once (e.g. Fock builds) don't care about order,
+but shouldn't rely on any particular one either.
+"""
 function sparseERI_2e4c(BS::BasisSet, cutoff = 1e-12)
     # Pre compute a list of angular momentum numbers (l) for each shell
     Nvals = num_basis.(BS.basis)
@@ -146,6 +159,16 @@ function sparseERI_2e4c(BS::BasisSet, cutoff = 1e-12)
     return indexes, out
 end
 
+"""
+    ERI_2e4c(BS::BasisSet, i, j, k, l) -> Array{Float64,4}
+
+Compute the two-electron four-center integral block `(ij|kl)` (chemist's
+notation) for shells `i,j,k,l` of `BS` (shell indices, not AO indices).
+Returned as an `(Ni,Nj,Nk,Nl)` array. For the full dense tensor, see
+[`ERI_2e4c(BS)`](@ref ERI_2e4c(::BasisSet)); for the permutation-compressed,
+screened form, see `sparseERI_2e4c`. For repeated calls (e.g. in a hot
+loop), see `ERI_2e4c!` to avoid reallocating.
+"""
 function ERI_2e4c(BS::BasisSet, i, j, k, l)
     out = zeros(eltype(BS.atoms[1].xyz), num_basis(BS.basis[i]), num_basis(BS.basis[j]),
                 num_basis(BS.basis[k]), num_basis(BS.basis[l]))
@@ -153,6 +176,9 @@ function ERI_2e4c(BS::BasisSet, i, j, k, l)
     return out
 end
 
+# Mutating, shell-quartet-level form of ERI_2e4c(BS, i, j, k, l): writes into
+# a caller-supplied `out` (sized (Ni,Nj,Nk,Nl)) instead of allocating.
+# Dispatches on the integral backend (LCint vs. the ACSint fallback below).
 function ERI_2e4c!(out, BS::BasisSet{LCint}, i, j, k, l)
     cint2e_sph!(out, @SVector([i,j,k,l]), BS.lib)
 end
@@ -161,6 +187,16 @@ function ERI_2e4c!(out, BS::BasisSet, i, j, k, l)
     generate_ERI_quartet!(out, BS, i, j, k, l)
 end
 
+"""
+    ERI_2e4c(BS::BasisSet) -> Array{Float64,4}
+
+Compute the full two-electron four-center integral tensor `(ij|kl)`
+(chemist's notation) for `BS`. Returns a dense `nbas × nbas × nbas × nbas`
+array respecting the standard 8-fold permutational symmetry
+(`(ij|kl)=(ji|kl)=(ij|lk)=(kl|ij)=...`). This is the full, uncompressed
+tensor -- for large basis sets prefer `sparseERI_2e4c`, which screens and
+stores only the unique elements. For repeated calls, see `ERI_2e4c!`.
+"""
 function ERI_2e4c(BS::BasisSet)
     N = BS.nbas
     out = zeros(N, N, N, N)

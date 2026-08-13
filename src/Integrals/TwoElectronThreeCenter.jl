@@ -1,5 +1,10 @@
 const _ghostBF = CartesianShell(0, [1.0], [0.0], Atom(1, 1.0, [0.0, 0.0, 0.0]))
 
+# Mutating, shell-triple-level backend for ERI_2e3c(BS1, BS2): writes into a
+# caller-supplied `out` instead of allocating. Dispatches on the integral
+# backend: LCint uses libcint's native 3-center kernel directly; the ACSint
+# fallback below instead evaluates it as a 4-center integral against a ghost
+# (zero-charge, s-type) basis function standing in for the missing 4th center.
 function ERI_2e3c!(out, BS::BasisSet{LCint}, i, j, k)
     cint3c2e_sph!(out, [i,j,k], BS.lib)
 end
@@ -8,6 +13,16 @@ function ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, i, j, k)
     generate_ERI_quartet!(out, BS1.basis[i], BS1.basis[j], BS2.basis[k], _ghostBF)
 end
 
+"""
+    ERI_2e3c(BS1::BasisSet, BS2::BasisSet) -> Array{Float64,3}
+
+Compute the full two-electron three-center integral tensor `(μν|P)`, with
+`μ,ν` running over `BS1`'s AOs (the "regular" orbital basis) and `P` over
+`BS2`'s (the auxiliary/fitting basis) -- the building block for density
+fitting / resolution-of-the-identity approximations. Returns a dense
+`BS1.nbas × BS1.nbas × BS2.nbas` array, symmetric under `μ↔ν` swap. For
+repeated calls, see `ERI_2e3c!`.
+"""
 function ERI_2e3c(BS1::BasisSet, BS2::BasisSet)
     out = zeros(BS1.nbas, BS1.nbas, BS2.nbas)
     ERI_2e3c!(out, BS1, BS2)

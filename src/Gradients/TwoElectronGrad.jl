@@ -1,3 +1,15 @@
+"""
+    ∇ERI_2e4c(BS::BasisSet, iA) -> Array{Float64,5}
+
+Gradient of the full two-electron four-center integral tensor `(ij|kl)`
+w.r.t. atom `iA`'s three Cartesian coordinates. Returns a dense
+`nbas × nbas × nbas × nbas × 3` array respecting the same 8-fold
+permutational symmetry as `ERI_2e4c`. This is the full, uncompressed
+tensor -- for large basis sets prefer `∇sparseERI_2e4c`, which screens and
+stores only the unique elements. For a single shell quartet, see
+[`∇ERI_2e4c(BS,iA,i,j,k,l)`](@ref ∇ERI_2e4c(::BasisSet, ::Int, ::Int,
+::Int, ::Int, ::Int)). For repeated calls, see `∇ERI_2e4c!`.
+"""
 function ∇ERI_2e4c(BS::BasisSet, iA)
     # Pre allocate output
     out = zeros(BS.nbas, BS.nbas, BS.nbas, BS.nbas, 3)
@@ -513,6 +525,15 @@ function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, 
     return indexes, ∇x, ∇y, ∇z
 end
 
+"""
+    ∇ERI_2e3c(BS1::BasisSet, BS2::BasisSet, iA) -> Array{Float64,4}
+
+Gradient of the full two-electron three-center integral tensor `(μν|P)`
+(`BS1`=regular basis, `BS2`=auxiliary/fitting basis) w.r.t. atom `iA`'s
+three Cartesian coordinates. `iA` indexes into `BS1.atoms`. Returns a dense
+`BS1.nbas × BS1.nbas × BS2.nbas × 3` array, symmetric under `μ↔ν` swap. For
+repeated calls, see `∇ERI_2e3c!`.
+"""
 function ∇ERI_2e3c(BS1::BasisSet, BS2::BasisSet, iA)
     # Pre allocate output
     out = zeros(BS1.nbas, BS1.nbas, BS2.nbas, 3)
@@ -634,6 +655,14 @@ function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA)
     return out
 end
 
+"""
+    ∇ERI_2e2c(BS::BasisSet, iA) -> Array{Float64,3}
+
+Gradient of the full two-electron two-center integral matrix `(P|Q)` (the
+density-fitting Coulomb metric `J_PQ`) w.r.t. atom `iA`'s three Cartesian
+coordinates. Returns a dense `nbas × nbas × 3` array, symmetric under
+`P↔Q` swap. For repeated calls, see `∇ERI_2e2c!`.
+"""
 function ∇ERI_2e2c(BS::BasisSet, iA)
     # Pre allocate output
     out = zeros(BS.nbas, BS.nbas, 3)

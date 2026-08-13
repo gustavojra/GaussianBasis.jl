@@ -66,8 +66,26 @@ function ∇1e!(out, BS::BasisSet, compute::String, iA)
     return out
 end
 
+"""
+    ∇overlap(BS::BasisSet, iA) -> Array{Float64,3}
+
+Gradient of the AO overlap matrix `S` w.r.t. atom `iA`'s three Cartesian
+coordinates, `∂S/∂R_iA`. Returns a dense `nbas × nbas × 3` array. For a
+single shell pair, see [`∇overlap(BS,iA,i,j)`](@ref ∇overlap(::BasisSet,
+::Int, ::Int, ::Int)). For repeated calls, see `∇overlap!`.
+"""
 ∇overlap(BS::BasisSet, iA) = ∇1e(BS, "overlap", iA)
 ∇overlap!(out, BS::BasisSet, iA) = ∇1e!(out, BS, "overlap", iA)
+
+"""
+    ∇kinetic(BS::BasisSet, iA) -> Array{Float64,3}
+
+Gradient of the AO kinetic energy matrix `T` w.r.t. atom `iA`'s three
+Cartesian coordinates, `∂T/∂R_iA`. Returns a dense `nbas × nbas × 3` array.
+For a single shell pair, see [`∇kinetic(BS,iA,i,j)`](@ref
+∇kinetic(::BasisSet, ::Int, ::Int, ::Int)). For repeated calls, see
+`∇kinetic!`.
+"""
 ∇kinetic(BS::BasisSet, iA) = ∇1e(BS, "kinetic", iA)
 ∇kinetic!(out, BS::BasisSet, iA) = ∇1e!(out, BS, "kinetic", iA)
 
@@ -171,6 +189,16 @@ function ∇1e_pair!(out, BS::BasisSet, compute::String, iA::Int, P::Int, Q::Int
     return out
 end
 
+"""
+    ∇nuclear(BS::BasisSet, iA) -> Array{Float64,3}
+
+Gradient of the AO nuclear attraction matrix `V` w.r.t. atom `iA`'s three
+Cartesian coordinates, `∂V/∂R_iA` (derivative of both the shell centers and
+the potential itself, since moving atom `iA` also moves its nuclear
+charge). Returns a dense `nbas × nbas × 3` array. For a single shell pair,
+see [`∇nuclear(BS,iA,i,j)`](@ref ∇nuclear(::BasisSet, ::Int, ::Int, ::Int)).
+For repeated calls, see `∇nuclear!`.
+"""
 function ∇nuclear(BS::BasisSet, iA)
     # Pre allocate output
     out = zeros(BS.nbas, BS.nbas, 3)

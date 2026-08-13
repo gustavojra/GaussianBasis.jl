@@ -153,8 +153,24 @@ function ∇21e!(out, BS::BasisSet, compute::String, iA, iB)
     return out
 end
 
+"""
+    ∇2overlap(BS::BasisSet, iA, iB) -> Array{Float64,4}
+
+Second derivative (Hessian) of the AO overlap matrix `S` w.r.t. atoms
+`iA`,`iB`'s three Cartesian coordinates each, `∂²S/∂R_iA∂R_iB`. Returns a
+dense `nbas × nbas × 3 × 3` array. For repeated calls, see `∇2overlap!`.
+"""
 ∇2overlap(BS::BasisSet, iA, iB) = ∇21e(BS, "overlap", iA, iB)
 ∇2overlap!(out, BS::BasisSet, iA, iB) = ∇21e!(out, BS, "overlap", iA, iB)
+
+"""
+    ∇2kinetic(BS::BasisSet, iA, iB) -> Array{Float64,4}
+
+Second derivative (Hessian) of the AO kinetic energy matrix `T` w.r.t.
+atoms `iA`,`iB`'s three Cartesian coordinates each, `∂²T/∂R_iA∂R_iB`.
+Returns a dense `nbas × nbas × 3 × 3` array. For repeated calls, see
+`∇2kinetic!`.
+"""
 ∇2kinetic(BS::BasisSet, iA, iB) = ∇21e(BS, "kinetic", iA, iB)
 ∇2kinetic!(out, BS::BasisSet, iA, iB) = ∇21e!(out, BS, "kinetic", iA, iB)
 
