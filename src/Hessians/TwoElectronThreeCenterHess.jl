@@ -104,16 +104,22 @@ function ∇2ERI_2e3c(BS1::BasisSet, BS2::BasisSet, iA, iB)
     return ∇2ERI_2e3c!(out, BS1, BS2, iA, iB)
 end
 
-function ∇2ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA, iB)
+function ∇2ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA, iB; Bmerged::Union{Nothing,BasisSet}=nothing)
 
     if size(out) != (BS1.nbas, BS1.nbas, BS2.nbas, 3, 3)
         throw(DimensionMismatch("Size of the output array needs to be (N1, N1, N2, 3, 3)."))
     end
     out .= 0.0
 
-    atoms = unique(vcat(BS1.atoms, BS2.atoms))
-    basis = vcat(BS1.basis, BS2.basis)
-    Bmerged = BasisSet("$(BS1.name*BS2.name)", atoms, basis)
+    # Bmerged depends only on BS1/BS2, never on iA/iB -- callers looping
+    # over atom pairs (e.g. Fermi.jl's DF-Hessian, O(natm^2) calls) can
+    # build it once and pass it in via this keyword. See ∇ERI_2e3c!'s
+    # identical pattern (Gradients/TwoElectronGrad.jl).
+    if Bmerged === nothing
+        atoms = unique(vcat(BS1.atoms, BS2.atoms))
+        basis = vcat(BS1.basis, BS2.basis)
+        Bmerged = BasisSet("$(BS1.name*BS2.name)", atoms, basis)
+    end
 
     Aat = BS1.atoms[iA]
     Bat = BS1.atoms[iB]

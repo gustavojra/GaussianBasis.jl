@@ -540,12 +540,17 @@ function ∇ERI_2e3c(BS1::BasisSet, BS2::BasisSet, iA)
     return ∇ERI_2e3c!(out, BS1, BS2, iA)
 end
 
-function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA)
+function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA; Bmerged::Union{Nothing,BasisSet}=nothing)
 
-    atoms = unique(vcat(BS1.atoms, BS2.atoms))
-    basis = vcat(BS1.basis, BS2.basis)
-
-    Bmerged = BasisSet("$(BS1.name*BS2.name)", atoms, basis)
+    # Bmerged depends only on BS1/BS2, never on iA -- callers looping over
+    # atoms (e.g. Fermi.jl's DF-gradient atom loops) can build it once and
+    # pass it in via this keyword instead of paying for a fresh BasisSet
+    # construction on every call.
+    if Bmerged === nothing
+        atoms = unique(vcat(BS1.atoms, BS2.atoms))
+        basis = vcat(BS1.basis, BS2.basis)
+        Bmerged = BasisSet("$(BS1.name*BS2.name)", atoms, basis)
+    end
 
     if size(out) != (BS1.nbas, BS1.nbas, BS2.nbas, 3)
         throw(DimensionMismatch("Size of the output array needs to be (N1, N1, N2, 3)."))
