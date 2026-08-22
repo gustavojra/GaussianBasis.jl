@@ -93,6 +93,25 @@ end
     end
 end
 
+# Scans every shell-quartet/direction combo and returns the (iA,iB,i,j,k,l,dir)
+# tuple of the first mismatch found, or `nothing` if all of them agree with
+# the finite-difference reference. A plain `return` inside nested loops
+# unwinds all of them at once, so this stops at the very first failure
+# instead of exhaustively checking (and reporting on) all 19200 combos.
+function find_first_hessian_quartet_mismatch(bs, atoms, nsh)
+    for iA = 1:length(atoms), iB = 1:length(atoms)
+        for i = 1:nsh, j = 1:nsh, k = 1:nsh, l = 1:nsh
+            d2 = ∇2ERI_2e4c(bs, iA, iB, i, j, k, l)
+            for dir = 1:3
+                if !isapprox(d2[:,:,:,:,:,dir], ∇2FD_ERI_2e4c(bs, iA, iB, i, j, k, l, dir); atol=1e-6)
+                    return (iA, iB, i, j, k, l, dir)
+                end
+            end
+        end
+    end
+    return nothing
+end
+
 @testset "∂²(μν|λσ)/∂X² shell-quartet" begin
     # Shell-quartet-level dense 4-center ERI Hessian (no whole-array
     # counterpart -- ∇2ERI_2e4c is meant to be called per surviving quartet
@@ -100,12 +119,10 @@ end
     # Bounded shell range to keep this test fast -- exhaustive nshells^4 x
     # natm^2 isn't needed to catch an orientation/indexing bug.
     nsh = min(bs.nshells, 4)
-    for iA = 1:length(atoms), iB = 1:length(atoms)
-        for i = 1:nsh, j = 1:nsh, k = 1:nsh, l = 1:nsh
-            d2 = ∇2ERI_2e4c(bs, iA, iB, i, j, k, l)
-            for dir = 1:3
-                @test d2[:,:,:,:,:,dir] ≈ ∇2FD_ERI_2e4c(bs, iA, iB, i, j, k, l, dir) atol=1e-6
-            end
-        end
+    mismatch = find_first_hessian_quartet_mismatch(bs, atoms, nsh)
+    if mismatch !== nothing
+        iA, iB, i, j, k, l, dir = mismatch
+        println("∂²(μν|λσ)/∂X² shell-quartet mismatch found at atoms ($iA,$iB), shells ($i,$j,$k,$l), direction $dir -- skipping the rest of the checks")
     end
+    @test mismatch === nothing
 end
