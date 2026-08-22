@@ -43,6 +43,29 @@ function string_repr(B::SphericalShell)
     return strip(out)
 end
 
+function compact_string_repr(B::SphericalShell)
+    # Generate Unicode symbol for sub number
+    l_sub = Char(0x2080 + B.l)
+
+    # Unicode for superscript is a bit messier, so gotta use control flow
+    l_sup = B.l == 1 ? Char(0x00B9) :
+            B.l in [2,3] ? Char(0x00B0 + B.l) :
+            Char(0x2070 + B.l)
+
+    nbas = 2*B.l + 1
+    mvals = collect(-B.l:B.l)
+    nprim = length(B.exp)
+
+    atom_name = Molecules.elements[B.atom.Z].name
+    plural_nbas = nbas == 1 ? "" : "s"
+    plural_nprim = nprim == 1 ? "" : "s"
+
+    # Reverse Dict(symbol=>num) to get Symbols from B.l
+    Lsymbol = Dict(value => key for (key, value) in AMDict)[B.l]
+    out = "$(Lsymbol) shell on $atom_name ($nbas basis function$plural_nbas, $nprim primitive$plural_nprim)"
+    return strip(out)
+end
+
 function string_repr(B::CartesianShell)
     # Generate Unicode symbol for sub number
     l_sub = Char(0x2080 + B.l)
@@ -145,6 +168,10 @@ end
 # Pretty printing
 function show(io::IO, ::MIME"text/plain", X::T) where T<:Union{ShellFunction, BasisSet}
     print(io, string_repr(X))
+end
+
+function show(io::IO, X::T) where T<:ShellFunction
+    print(io, compact_string_repr(X))
 end
 
 # adapted from https://juliafolds.github.io/data-parallelism/tutorials/concurrency-patterns/
