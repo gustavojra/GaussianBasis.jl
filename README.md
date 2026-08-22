@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/gblogo.png" width="600" alt=""/>
+  <img src="docs/src/assets/gblogo.png" width="600" alt=""/>
 </p>
 
 <table align="center">
@@ -76,11 +76,11 @@ julia> overlap(bset)
 |---------------|-------------|:-------:|
 | `overlap`       | Overlap between two basis functions | $\langle \chi_i\|\chi_j \rangle$ |
 | `kinetic`       | Kinetic integral | $\frac{1}{2}\langle\chi_i\|\hat{p}^2\|\chi_j\rangle$|
-| `nuclear`       | Nuclear attraction integral  | $\sum_A\langle\chi_i\|\frac{Z_A}{R_A - r}\|\chi_j\rangle$|
+| `nuclear`       | Nuclear attraction integral  | $\sum_A\langle\chi_i\|\frac{Z_A}{\|R_A - r\|}\|\chi_j\rangle$|
 | `ERI_2e4c`       | Electron repulsion integral - returns a full rank-4 tensor. Chemist's notation. | $\left(\chi_i\chi_j\|\frac{1}{r}\|\chi_k\chi_l\right)$|
 | `sparseERI_2e4c`       | Electron repulsion integral - returns non-zero elements along with a index tuple. Chemist's notation. | $\left(\chi_i\chi_j\|\frac{1}{r}\|\chi_k\chi_l\right)$|
-| `ERI_2e3c`       | Electron repulsion integral over three centers. **Note:** this function requires another basis set as the second argument (that is the auxiliary basis set in [Density Fitting](http://vergil.chemistry.gatech.edu/notes/df.pdf)). It must be called as `ERI_2c3c(bset, aux)` | $\left(\chi_i\chi_j\|\frac{1}{r}\|P_k\right)$|
-| `ERI_2e2c`       | Electron repulsion integral over two centers  | $\left(\chi_i\|\frac{1}{r}\|\chi_j\right)$|
+| `ERI_2e3c`       | Electron repulsion integral over three centers. **Note:** this function requires another basis set as the second argument (that is the auxiliary basis set in [Density Fitting](http://vergil.chemistry.gatech.edu/notes/df.pdf)). It must be called as `ERI_2e3c(bset, aux)` | $\left(\chi_i\chi_j\|\frac{1}{r}\|P_k\right)$|
+| `ERI_2e2c`       | Electron repulsion integral over two centers  | $\left(P_i\|\frac{1}{r}\|Q_j\right)$|
 | `dipole`         | Dipole moment integral.                        | $\langle\chi_i\|\hat{x}\|\chi_j\rangle$ |
 
 Mutating versions of the functions are also available:
@@ -224,7 +224,7 @@ that atom's position at all in this degenerate case).
 ## Basis Functions
 `ShellFunction` object is the central data type within this package. Here, `ShellFunction` is an abstract type with two concrete structures: `SphericalShell` and `CartesianShell`. By default `SphericalShell` is created. In general a spherical basis function is
 
-![BF](assets/bf.png)
+$$ \chi_{l,m} = \sum_n c_n \cdot Y_{l,m}\cdot r^l\cdot e^{-\xi_n r^2}$$
 
 where the sum goes over primitive functions. A `ShellFunction` object contains the data to reproduce the mathematical object, i.e. the angular momentum number (***l***), expansion coefficients (***c<sub>n</sub>***), and exponential factors (***&xi;<sub>n</sub>***). We can create a basis function by passing these arguments orderly:
 ```julia
@@ -315,7 +315,7 @@ true
 ### Integrals over different basis sets
 
 Functions such as `ERI_2e3c` require two basis set as arguments. Looking at the corresponding equation
-![3cERI](assets/3cERI.png) we see two basis set: ***&Chi;*** and ***P***. If your first basis set has 2 basis functions and the second has 4, your output array is a 2x2x4 tensor. For example
+$(\chi_i\chi_j|P_k)$ we see two basis set: ***&Chi;*** and ***P***. If your first basis set has 2 basis functions and the second has 4, your output array is a 2x2x4 tensor. For example
 ```julia
 julia> b1 = BasisSet("sto-3g", """
               H        0.00      0.00     0.00                 

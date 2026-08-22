@@ -14,6 +14,7 @@ makedocs(;
         canonical="https://fermiqc.github.io/GaussianBasis.jl",
         edit_link="main",
         assets=String[],
+        sidebar_sitename=false,
     ),
     pages=[
         "Home" => "index.md",
