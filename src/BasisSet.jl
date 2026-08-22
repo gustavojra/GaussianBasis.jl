@@ -34,6 +34,8 @@ julia> water = \"""
 
 julia> bset = BasisSet("sto-3g", water)
 sto-3g Basis Set
+Type: Spherical   Backend: Libcint
+
 Number of shells: 5
 Number of basis:  7
 
@@ -54,8 +56,8 @@ Contains 1 basis function built from 3 primitive gaussians
 You can also create your own crazy mix!
 Let us create one S and one P basis functions for H
 ```julia-repl
-julia> H1 = GaussianBasis.Atom(:H, 1.0, [0.0, 0.0, 0.0]);
-julia> H2 = GaussianBasis.Atom(:H, 1.0, [0.0, 0.0, 0.7]);
+julia> H1 = GaussianBasis.Atom(:H, [0.0, 0.0, 0.0]);
+julia> H2 = GaussianBasis.Atom(:H, [0.0, 0.0, 0.7]);
 julia> s = ShellFunction(0, [0.5215367271], [0.122], H1)
 julia> p = ShellFunction(1, [1.9584045349], [0.727], H2)
 ```
@@ -71,11 +73,12 @@ julia> shells = [s, p]  # One s function on the first hydrogen
 julia> BasisSet("UnequalHydrogens", shells)
 UnequalHydrogens Basis Set
 Type: Spherical   Backend: Libcint
-Number of shells: 3
-Number of basis:  5
+
+Number of shells: 2
+Number of basis:  4
 
 H: 1s 
-H: 1s 1p
+H: 1p
 ```
 
 > Note that the number of shells and the number of basis functions are different. Integrals are computed over 

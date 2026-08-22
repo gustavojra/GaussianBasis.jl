@@ -66,6 +66,20 @@ function compact_string_repr(B::SphericalShell)
     return strip(out)
 end
 
+function compact_string_repr(B::CartesianShell)
+    nbas = ((B.l + 1) * (B.l + 2)) ÷ 2
+    nprim = length(B.exp)
+
+    atom_name = Molecules.elements[B.atom.Z].name
+    plural_nbas = nbas == 1 ? "" : "s"
+    plural_nprim = nprim == 1 ? "" : "s"
+
+    # Reverse Dict(symbol=>num) to get Symbols from B.l
+    Lsymbol = Dict(value => key for (key, value) in AMDict)[B.l]
+    out = "$(Lsymbol) shell on $atom_name ($nbas basis function$plural_nbas, $nprim primitive$plural_nprim)"
+    return strip(out)
+end
+
 function string_repr(B::CartesianShell)
     # Generate Unicode symbol for sub number
     l_sub = Char(0x2080 + B.l)
@@ -304,8 +318,8 @@ function find_shell_m(B::BasisSet, idx::Integer)
 end
 
 """
-    atomic_orbital_value(B::BasisSet, i::Integer, r::AbstractVector) -> Real
-    atomic_orbital_value(B::BasisSet, i::Integer, r::AbstractArray) -> AbstractArray
+    atomic_orbital_amplitude(B::BasisSet, i::Integer, r::AbstractVector) -> Real
+    atomic_orbital_amplitude(B::BasisSet, i::Integer, r::AbstractArray) -> AbstractArray
 
 Returns the amplitude of the `i`th basis function at a set of real space positions. `r` can be either a 3-vector containing a single position or a 3 × … array of positions for evaluating many points at once more efficiently.
 

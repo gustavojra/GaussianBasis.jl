@@ -33,6 +33,8 @@ julia> bset = BasisSet("sto-3g", """
        """);
 
 sto-3g Basis Set
+Type: Spherical   Backend: Libcint
+
 Number of shells: 5
 Number of basis:  7
 

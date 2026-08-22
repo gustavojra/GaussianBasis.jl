@@ -27,7 +27,7 @@ For each shell, there are 2l+1 basis functions corresponding to the magnetic qua
 # Examples
 
 ```julia
-julia> atom = Atom(1, 1.008, [0.0, 0.0, 0.0])
+julia> atom = GaussianBasis.Atom(1, 1.008, [0.0, 0.0, 0.0])
 julia> p_shell = SphericalShell(1, [1/√2, 1/√2], [5.0, 1.2], atom)
 P shell on Hydrogen at position [0.0, 0.0, 0.0] Å
 Contains 3 basis functions built from 2 primitive gaussians
@@ -69,7 +69,7 @@ That is, m_l values are not well defined in Cartesian shells.
 # Examples
 
 ```julia
-julia> atom = Atom(1, 1.008, [0.0, 0.0, 0.0])
+julia> atom = GaussianBasis.Atom(1, 1.008, [0.0, 0.0, 0.0])
 julia> d_shell = CartesianShell(2, [1/√2], [5.0], atom)
 D shell on Hydrogen at position [0.0, 0.0, 0.0] Å
 Contains 6 basis functions built from 1 primitive gaussian
