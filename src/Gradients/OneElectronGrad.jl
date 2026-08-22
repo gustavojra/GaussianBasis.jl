@@ -70,9 +70,10 @@ end
     ∇overlap(BS::BasisSet, iA) -> Array{Float64,3}
 
 Gradient of the AO overlap matrix `S` w.r.t. atom `iA`'s three Cartesian
-coordinates, `∂S/∂R_iA`. Returns a dense `nbas × nbas × 3` array. For a
-single shell pair, see [`∇overlap(BS,iA,i,j)`](@ref ∇overlap(::BasisSet,
-::Int, ::Int, ::Int)). For repeated calls, see `∇overlap!`.
+coordinates, `∂S/∂R_iA`, with `R_iA` in bohr (see [Gradients](@ref) for
+units). Returns a dense `nbas × nbas × 3` array. For a single shell pair,
+see [`∇overlap(BS,iA,i,j)`](@ref ∇overlap(::BasisSet, ::Int, ::Int,
+::Int)). For repeated calls, see `∇overlap!`.
 """
 ∇overlap(BS::BasisSet, iA) = ∇1e(BS, "overlap", iA)
 ∇overlap!(out, BS::BasisSet, iA) = ∇1e!(out, BS, "overlap", iA)
@@ -81,10 +82,10 @@ single shell pair, see [`∇overlap(BS,iA,i,j)`](@ref ∇overlap(::BasisSet,
     ∇kinetic(BS::BasisSet, iA) -> Array{Float64,3}
 
 Gradient of the AO kinetic energy matrix `T` w.r.t. atom `iA`'s three
-Cartesian coordinates, `∂T/∂R_iA`. Returns a dense `nbas × nbas × 3` array.
-For a single shell pair, see [`∇kinetic(BS,iA,i,j)`](@ref
-∇kinetic(::BasisSet, ::Int, ::Int, ::Int)). For repeated calls, see
-`∇kinetic!`.
+Cartesian coordinates, `∂T/∂R_iA`, with `R_iA` in bohr (see
+[Gradients](@ref) for units). Returns a dense `nbas × nbas × 3` array. For
+a single shell pair, see [`∇kinetic(BS,iA,i,j)`](@ref ∇kinetic(::BasisSet,
+::Int, ::Int, ::Int)). For repeated calls, see `∇kinetic!`.
 """
 ∇kinetic(BS::BasisSet, iA) = ∇1e(BS, "kinetic", iA)
 ∇kinetic!(out, BS::BasisSet, iA) = ∇1e!(out, BS, "kinetic", iA)
@@ -195,8 +196,9 @@ end
 Gradient of the AO nuclear attraction matrix `V` w.r.t. atom `iA`'s three
 Cartesian coordinates, `∂V/∂R_iA` (derivative of both the shell centers and
 the potential itself, since moving atom `iA` also moves its nuclear
-charge). Returns a dense `nbas × nbas × 3` array. For a single shell pair,
-see [`∇nuclear(BS,iA,i,j)`](@ref ∇nuclear(::BasisSet, ::Int, ::Int, ::Int)).
+charge), with `R_iA` in bohr (see [Gradients](@ref) for units). Returns a
+dense `nbas × nbas × 3` array. For a single shell pair, see
+[`∇nuclear(BS,iA,i,j)`](@ref ∇nuclear(::BasisSet, ::Int, ::Int, ::Int)).
 For repeated calls, see `∇nuclear!`.
 """
 function ∇nuclear(BS::BasisSet, iA)

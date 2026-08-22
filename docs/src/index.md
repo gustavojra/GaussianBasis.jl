@@ -24,15 +24,14 @@ basis functions read from a standard basis set library (e.g. `sto-3g`,
 `cc-pvdz`):
 
 ```julia-repl
-julia> using GaussianBasis, Molecules
+julia> using GaussianBasis
 
-julia> water = Molecules.parse_string("""
+julia> bset = BasisSet("sto-3g", """
        O        0.000000000000     -0.143225816552      0.000000000000
        H        1.638036840407      1.136548822547     -0.000000000000
        H       -1.638036840407      1.136548822547     -0.000000000000
        """);
 
-julia> bset = BasisSet("sto-3g", water)
 sto-3g Basis Set
 Number of shells: 5
 Number of basis:  7
@@ -42,8 +41,7 @@ H: 1s
 H: 1s
 ```
 
-Geometries are Cartesian coordinates in Angstrom; internally, integrals are
-evaluated in atomic units (bohr). From a `BasisSet`, you can compute:
+Geometries are Cartesian coordinates in Angstrom. From a `BasisSet`, you can compute:
 
   - one-electron integrals (overlap, kinetic, nuclear attraction) -- see
     [One-Electron Integrals](@ref)
@@ -56,9 +54,14 @@ evaluated in atomic units (bohr). From a `BasisSet`, you can compute:
 
 ```julia-repl
 julia> S = overlap(bset);
-
-julia> size(S)
-(7, 7)
+7×7 Matrix{Float64}:
+ 1.0         0.236704    0.0        0.0        0.0  0.00410862   0.00410862
+ 0.236704    1.0         0.0        0.0        0.0  0.0644883    0.0644883
+ 0.0         0.0         1.0        0.0        0.0  0.0572785   -0.0572785
+ 0.0         0.0         0.0        1.0        0.0  0.0447509    0.0447509
+ 0.0         0.0         0.0        0.0        1.0  0.0          0.0
+ 0.00410862  0.0644883   0.0572785  0.0447509  0.0  1.0          0.0100209
+ 0.00410862  0.0644883  -0.0572785  0.0447509  0.0  0.0100209    1.0
 ```
 
 ## Basis sets and library structure

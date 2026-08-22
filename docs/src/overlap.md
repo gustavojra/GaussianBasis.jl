@@ -50,6 +50,20 @@ nuclear(::BasisSet, ::BasisSet)
 nuclear(::BasisSet, ::BasisSet, ::Any, ::Any)
 ```
 
+### Mutating forms
+
+For repeated calls (e.g. across a geometry scan), these write into a
+preallocated array instead of reallocating:
+
+```@docs
+overlap!(::Any, ::BasisSet)
+overlap!(::Any, ::BasisSet{LCint}, ::Any, ::Any)
+kinetic!(::Any, ::BasisSet)
+kinetic!(::Any, ::BasisSet{LCint}, ::Any, ::Any)
+nuclear!(::Any, ::BasisSet)
+nuclear!(::Any, ::BasisSet{LCint}, ::Any, ::Any)
+```
+
 ## Example
 
 ```julia-repl
@@ -81,7 +95,3 @@ julia> V = nuclear(bset);
 julia> V[1, 1]
 -61.12760191532953
 ```
-
-For repeated calls (e.g. across a geometry scan), use the mutating `!`
-forms (`overlap!`, `kinetic!`, `nuclear!`) to write into a preallocated
-`nbas × nbas` array instead of reallocating each time.

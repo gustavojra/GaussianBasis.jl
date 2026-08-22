@@ -248,6 +248,8 @@ function atomic_orbital_amplitude(shell::BasisFunction, n::Integer, r::AbstractA
     return v
 end
 
+# Returns the shell and the index of the basis function within that shell for a given basis function index in the basis set.
+# i.e., think for sto-3g water [O, H, H], find_shell_m(bset, 4) returns the O p shell and the index 2.
 function find_shell_m(B::BasisSet, idx::Integer)
     if idx <= 0
         throw(BoundsError(B, idx))
@@ -256,13 +258,6 @@ function find_shell_m(B::BasisSet, idx::Integer)
     n = idx
     for shell in B.basis
         if n - (2shell.l +1) <= 0
-            m = n - shell.l - 1
-
-            # for p shell, ordering is px, py, pz <=> m = 1,-1,0
-            if shell.l == 1
-                m = (1, -1, 0)[n]
-            end
-
             return shell, n
         end
         n -= 2shell.l + 1
@@ -292,6 +287,7 @@ julia> atomic_orbital_amplitude(bset, 1, [0.1;0.2;0.3;;-0.1;0.3;-0.2])
 function atomic_orbital_amplitude(B::BasisSet, idx::Integer, r::AbstractArray)
     return atomic_orbital_amplitude(find_shell_m(B, idx)..., r)
 end
+# This dispatch supports a vector instead of matrix, it calls the method above.
 function atomic_orbital_amplitude(B::BasisSet, idx::Integer, r::AbstractVector)
     return atomic_orbital_amplitude(B, idx, reshape(r,:,1))[1]
 end

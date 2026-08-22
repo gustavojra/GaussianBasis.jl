@@ -157,8 +157,9 @@ end
     ∇2overlap(BS::BasisSet, iA, iB) -> Array{Float64,4}
 
 Second derivative (Hessian) of the AO overlap matrix `S` w.r.t. atoms
-`iA`,`iB`'s three Cartesian coordinates each, `∂²S/∂R_iA∂R_iB`. Returns a
-dense `nbas × nbas × 3 × 3` array. For repeated calls, see `∇2overlap!`.
+`iA`,`iB`'s three Cartesian coordinates each, `∂²S/∂R_iA∂R_iB`, with
+`R_iA`/`R_iB` in bohr (see [Hessians](@ref) for units). Returns a dense
+`nbas × nbas × 3 × 3` array. For repeated calls, see `∇2overlap!`.
 """
 ∇2overlap(BS::BasisSet, iA, iB) = ∇21e(BS, "overlap", iA, iB)
 ∇2overlap!(out, BS::BasisSet, iA, iB) = ∇21e!(out, BS, "overlap", iA, iB)
@@ -167,9 +168,9 @@ dense `nbas × nbas × 3 × 3` array. For repeated calls, see `∇2overlap!`.
     ∇2kinetic(BS::BasisSet, iA, iB) -> Array{Float64,4}
 
 Second derivative (Hessian) of the AO kinetic energy matrix `T` w.r.t.
-atoms `iA`,`iB`'s three Cartesian coordinates each, `∂²T/∂R_iA∂R_iB`.
-Returns a dense `nbas × nbas × 3 × 3` array. For repeated calls, see
-`∇2kinetic!`.
+atoms `iA`,`iB`'s three Cartesian coordinates each, `∂²T/∂R_iA∂R_iB`, with
+`R_iA`/`R_iB` in bohr (see [Hessians](@ref) for units). Returns a dense
+`nbas × nbas × 3 × 3` array. For repeated calls, see `∇2kinetic!`.
 """
 ∇2kinetic(BS::BasisSet, iA, iB) = ∇21e(BS, "kinetic", iA, iB)
 ∇2kinetic!(out, BS::BasisSet, iA, iB) = ∇21e!(out, BS, "kinetic", iA, iB)
@@ -177,8 +178,9 @@ Returns a dense `nbas × nbas × 3 × 3` array. For repeated calls, see
 """
     ∇2ERI_2e2c(auxbset::BasisSet, iA, iB)
 
-Second derivative (Hessian, atoms `iA`,`iB`) of the 2-center two-electron
-auxiliary metric `(P|Q)` (density fitting's `J_PQ`). Output `(naux,naux,3,3)`.
+Second derivative (Hessian, atoms `iA`,`iB`, with `R_iA`/`R_iB` in bohr --
+see [Hessians](@ref) for units) of the 2-center two-electron auxiliary
+metric `(P|Q)` (density fitting's `J_PQ`). Output `(naux,naux,3,3)`.
 Reuses `∇21e!`'s same-shell/cross-shell structure via the `"metric"`
 compute-case -- see this file's header comment.
 """

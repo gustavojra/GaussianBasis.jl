@@ -72,9 +72,9 @@ end
 
 Second derivative (Hessian) of the AO nuclear attraction matrix `V` w.r.t.
 atoms `iA`,`iB`'s three Cartesian coordinates each, `∂²V/∂R_iA∂R_iB`
-(accounting for both shell-center and nuclear-charge-position derivatives).
-Returns a dense `nbas × nbas × 3 × 3` array. For repeated calls, see
-`∇2nuclear!`.
+(accounting for both shell-center and nuclear-charge-position derivatives),
+with `R_iA`/`R_iB` in bohr (see [Hessians](@ref) for units). Returns a
+dense `nbas × nbas × 3 × 3` array. For repeated calls, see `∇2nuclear!`.
 """
 function ∇2nuclear(BS::BasisSet, iA, iB)
     out = zeros(BS.nbas, BS.nbas, 3, 3)

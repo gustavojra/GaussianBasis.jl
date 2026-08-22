@@ -94,10 +94,11 @@ end
 """
     ∇2ERI_2e3c(BS1::BasisSet, BS2::BasisSet, iA, iB)
 
-Second derivative (Hessian, atoms `iA`,`iB`) of the 3-center two-electron
-integral `(μν|P)` (`BS1`=regular basis, `BS2`=auxiliary/fitting basis --
-density fitting). Output `(BS1.nbas,BS1.nbas,BS2.nbas,3,3)`. See this file's
-header comment for the shell-position combinatorics and kernel mapping.
+Second derivative (Hessian, atoms `iA`,`iB`, with `R_iA`/`R_iB` in bohr --
+see [Hessians](@ref) for units) of the 3-center two-electron integral
+`(μν|P)` (`BS1`=regular basis, `BS2`=auxiliary/fitting basis -- density
+fitting). Output `(BS1.nbas,BS1.nbas,BS2.nbas,3,3)`. See this file's header
+comment for the shell-position combinatorics and kernel mapping.
 """
 function ∇2ERI_2e3c(BS1::BasisSet, BS2::BasisSet, iA, iB)
     out = zeros(BS1.nbas, BS1.nbas, BS2.nbas, 3, 3)

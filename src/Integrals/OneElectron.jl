@@ -2,14 +2,40 @@
 # write into a caller-supplied `out` (sized (Ni,Nj)) instead of allocating.
 # Dispatches on the integral backend (LCint vs. the ACSint fallback below).
 # Backend: Libcint
+"""
+    overlap!(out, BS::BasisSet, i, j)
+
+Compute the AO overlap block `⟨i|j⟩` for shells `i` and `j` of `BS` (shell
+indices, not AO indices), writing the output into `out` which must be a `(Ni,Nj)` matrix where `Ni`/`Nj`
+are the number of basis functions in each shell. For the full overlap
+matrix, see [`overlap!(out, BS)`](@ref overlap!(::Any, ::BasisSet)).
+"""
 function overlap!(out, BS::BasisSet{LCint}, i, j)
     cint1e_ovlp_sph!(out, @SVector([i,j]), BS.lib)
 end
 
+"""
+    kinetic!(out, BS::BasisSet, i, j)
+
+Compute the AO kinetic energy block for shells `i` and `j` of `BS` (shell
+indices, not AO indices), writing the output into `out` which must be a
+`(Ni,Nj)` matrix where `Ni`/`Nj` are the number of basis functions in each
+shell. For the full kinetic energy matrix, see
+[`kinetic!(out, BS)`](@ref kinetic!(::Any, ::BasisSet)).
+"""
 function kinetic!(out, BS::BasisSet{LCint}, i, j)
     cint1e_kin_sph!(out, @SVector([i,j]), BS.lib)
 end
 
+"""
+    nuclear!(out, BS::BasisSet, i, j)
+
+Compute the AO nuclear attraction block (summed over every nucleus in
+`BS.atoms`) for shells `i` and `j` of `BS` (shell indices, not AO indices),
+writing the output into `out` which must be a `(Ni,Nj)` matrix where `Ni`/`Nj`
+are the number of basis functions in each shell. For the full nuclear
+attraction matrix, see [`nuclear!(out, BS)`](@ref nuclear!(::Any, ::BasisSet)).
+"""
 function nuclear!(out, BS::BasisSet{LCint}, i, j)
     cint1e_nuc_sph!(out, @SVector([i,j]), BS.lib)
 end
@@ -96,11 +122,29 @@ matrix. For repeated calls, see `nuclear!`.
 """
 nuclear(BS::BasisSet) = get_1e_matrix(nuclear!, BS)
 
-# `overlap!`/`kinetic!`/`nuclear!(out, BS)` write into a caller-supplied
-# `nbas × nbas` `out` instead of allocating -- use these in a hot loop (e.g.
-# repeated calls across a geometry scan) to avoid reallocating every time.
+"""
+    overlap!(out, BS::BasisSet)
+
+Compute the AO overlap matrix `S` for `BS`. The output is written into `out` which must be a dense
+`nbas × nbas` matrix.
+"""
 overlap!(out, BS::BasisSet) = get_1e_matrix!(overlap!, out, BS)
+
+"""
+    kinetic!(out, BS::BasisSet)
+
+Compute the AO kinetic energy matrix `T` for `BS`. The output is written into `out` which must be a
+dense `nbas × nbas` matrix.
+"""
 kinetic!(out, BS::BasisSet) = get_1e_matrix!(kinetic!, out, BS)
+
+"""
+    nuclear!(out, BS::BasisSet)
+
+Compute the AO nuclear attraction matrix `V` for `BS` (potential from every
+nucleus in `BS.atoms`, summed). The output is written into `out` which must be a dense `nbas × nbas`
+matrix.
+"""
 nuclear!(out, BS::BasisSet) = get_1e_matrix!(nuclear!, out, BS)
 
 function get_1e_matrix(callback, BS::BasisSet, rank::Integer = 0)
@@ -109,6 +153,10 @@ function get_1e_matrix(callback, BS::BasisSet, rank::Integer = 0)
 end
 
 function get_1e_matrix!(callback, out, BS::BasisSet, rank::Integer = 0)
+
+    # Zero out the output array
+    fill!(out, 0.0)
+
     Nvals = num_basis.(BS.basis)
     Nmax = maximum(Nvals)
 

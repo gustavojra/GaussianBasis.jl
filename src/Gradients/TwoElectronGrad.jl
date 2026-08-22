@@ -2,13 +2,14 @@
     ∇ERI_2e4c(BS::BasisSet, iA) -> Array{Float64,5}
 
 Gradient of the full two-electron four-center integral tensor `(ij|kl)`
-w.r.t. atom `iA`'s three Cartesian coordinates. Returns a dense
-`nbas × nbas × nbas × nbas × 3` array respecting the same 8-fold
-permutational symmetry as `ERI_2e4c`. This is the full, uncompressed
-tensor -- for large basis sets prefer `∇sparseERI_2e4c`, which screens and
-stores only the unique elements. For a single shell quartet, see
-[`∇ERI_2e4c(BS,iA,i,j,k,l)`](@ref ∇ERI_2e4c(::BasisSet, ::Int, ::Int,
-::Int, ::Int, ::Int)). For repeated calls, see `∇ERI_2e4c!`.
+w.r.t. atom `iA`'s three Cartesian coordinates, with `R_iA` in bohr (see
+[Gradients](@ref) for units). Returns a dense `nbas × nbas × nbas × nbas ×
+3` array respecting the same 8-fold permutational symmetry as `ERI_2e4c`.
+This is the full, uncompressed tensor -- for large basis sets prefer
+`∇sparseERI_2e4c`, which screens and stores only the unique elements. For a
+single shell quartet, see [`∇ERI_2e4c(BS,iA,i,j,k,l)`](@ref
+∇ERI_2e4c(::BasisSet, ::Int, ::Int, ::Int, ::Int, ::Int)). For repeated
+calls, see `∇ERI_2e4c!`.
 """
 function ∇ERI_2e4c(BS::BasisSet, iA)
     # Pre allocate output
@@ -351,12 +352,13 @@ end
 """
     ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff=1e-12; ij_vals=nothing, σvals=nothing)
 
-Derivative (w.r.t. atom `iA`'s three Cartesian directions) of the unique
-(permutation-compressed) two-electron four-center integrals, Schwarz-
-screened the same way `sparseERI_2e4c` screens the energy integrals (see
-`schwarz_bounds`). `ij_vals`/`σvals` default to a fresh `schwarz_bounds(BS)`
-call if not supplied -- pass a precomputed pair in when calling this
-repeatedly across atoms to avoid recomputing it every time.
+Derivative (w.r.t. atom `iA`'s three Cartesian directions, in bohr -- see
+[Gradients](@ref) for units) of the unique (permutation-compressed)
+two-electron four-center integrals, Schwarz-screened the same way
+`sparseERI_2e4c` screens the energy integrals (see `schwarz_bounds`).
+`ij_vals`/`σvals` default to a fresh `schwarz_bounds(BS)` call if not
+supplied -- pass a precomputed pair in when calling this repeatedly across
+atoms to avoid recomputing it every time.
 """
 function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, σvals = nothing)
     # The energy-integral Schwarz bound is a valid screening proxy for the
@@ -530,9 +532,10 @@ end
 
 Gradient of the full two-electron three-center integral tensor `(μν|P)`
 (`BS1`=regular basis, `BS2`=auxiliary/fitting basis) w.r.t. atom `iA`'s
-three Cartesian coordinates. `iA` indexes into `BS1.atoms`. Returns a dense
-`BS1.nbas × BS1.nbas × BS2.nbas × 3` array, symmetric under `μ↔ν` swap. For
-repeated calls, see `∇ERI_2e3c!`.
+three Cartesian coordinates, with `R_iA` in bohr (see [Gradients](@ref) for
+units). `iA` indexes into `BS1.atoms`. Returns a dense `BS1.nbas ×
+BS1.nbas × BS2.nbas × 3` array, symmetric under `μ↔ν` swap. For repeated
+calls, see `∇ERI_2e3c!`.
 """
 function ∇ERI_2e3c(BS1::BasisSet, BS2::BasisSet, iA)
     # Pre allocate output
@@ -660,8 +663,9 @@ end
 
 Gradient of the full two-electron two-center integral matrix `(P|Q)` (the
 density-fitting Coulomb metric `J_PQ`) w.r.t. atom `iA`'s three Cartesian
-coordinates. Returns a dense `nbas × nbas × 3` array, symmetric under
-`P↔Q` swap. For repeated calls, see `∇ERI_2e2c!`.
+coordinates, with `R_iA` in bohr (see [Gradients](@ref) for units). Returns
+a dense `nbas × nbas × 3` array, symmetric under `P↔Q` swap. For repeated
+calls, see `∇ERI_2e2c!`.
 """
 function ∇ERI_2e2c(BS::BasisSet, iA)
     # Pre allocate output

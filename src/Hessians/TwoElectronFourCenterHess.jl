@@ -206,8 +206,9 @@ end
     ∇2ERI_2e4c(BS::BasisSet, Xflag::NTuple{4,Bool}, Yflag::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
 
 Shell-quartet-level dense 4-center ERI Hessian: `∂²(ij|kl)/∂R_iA∂R_iB` for
-shells `i,j,k,l` w.r.t. atoms `iA,iB`'s three Cartesian directions each, as
-an `(Ni,Nj,Nk,Nl,3,3)` block. No Schwarz screening either way -- callers
+shells `i,j,k,l` w.r.t. atoms `iA,iB`'s three Cartesian directions each,
+with `R_iA`/`R_iB` in bohr (see [Hessians](@ref) for units), as an
+`(Ni,Nj,Nk,Nl,3,3)` block. No Schwarz screening either way -- callers
 wanting that should screen before calling.
 
 Two forms, same relationship as `∇ERI_2e4c`'s: the `iA::Int,iB::Int` form
