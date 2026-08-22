@@ -4,7 +4,7 @@ CurrentModule = GaussianBasis
 
 # GaussianBasis.jl
 
-[GaussianBasis.jl](https://github.com/gustavojra/GaussianBasis.jl) evaluates
+[GaussianBasis.jl](https://github.com/FermiQC/GaussianBasis.jl) evaluates
 molecular integrals (and their nuclear-coordinate derivatives) over
 contracted Gaussian-type atomic orbitals, using [libcint](https://github.com/sunqm/libcint)
 as its default backend. It is the integral engine behind

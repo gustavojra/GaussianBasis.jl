@@ -6,12 +6,12 @@ DocMeta.setdocmeta!(GaussianBasis, :DocTestSetup, :(using GaussianBasis); recurs
 makedocs(;
     modules=[GaussianBasis],
     authors="gustavojra <gustavo.aroeira@gmail.com> and contributors",
-    repo="https://github.com/gustavojra/GaussianBasis.jl/blob/{commit}{path}#{line}",
+    repo="https://github.com/FermiQC/GaussianBasis.jl/blob/{commit}{path}#{line}",
     sitename="GaussianBasis.jl",
     checkdocs=:exports,
     format=Documenter.HTML(;
         prettyurls=get(ENV, "CI", "false") == "true",
-        canonical="https://gustavojra.github.io/GaussianBasis.jl",
+        canonical="https://fermiqc.github.io/GaussianBasis.jl",
         edit_link="main",
         assets=String[],
     ),
@@ -26,6 +26,6 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/gustavojra/GaussianBasis.jl",
+    repo="github.com/FermiQC/GaussianBasis.jl",
     devbranch="main",
 )
