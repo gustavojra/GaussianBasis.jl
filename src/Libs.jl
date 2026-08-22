@@ -11,7 +11,7 @@ struct LCint <: IntLib
     env::Vector{Cdouble}
 end
 
-function LCint(atoms::Vector{At}, basis::Vector{Bs}) where {At<:Atom,Bs<:BasisFunction}
+function LCint(atoms::Vector{At}, basis::Vector{Bs}) where {At<:Atom,Bs<:ShellFunction}
     ATM_SLOTS = 6
     BAS_SLOTS = 8
 

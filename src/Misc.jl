@@ -11,9 +11,14 @@ function string_repr(B::SphericalShell)
     mvals = collect(-B.l:B.l)
     nprim = length(B.exp)
 
+    atom_name = Molecules.elements[B.atom.Z].name
+    plural_nbas = nbas == 1 ? "" : "s"
+    plural_nprim = nprim == 1 ? "" : "s"
+
     # Reverse Dict(symbol=>num) to get Symbols from B.l
     Lsymbol = Dict(value => key for (key, value) in AMDict)[B.l]
-    out = "$(Lsymbol) shell with $nbas basis built from $nprim primitive gaussians\n\n"
+    out = "$(Lsymbol) shell on $atom_name at position $(B.atom.xyz) Å\n"
+    out *= "Contains $nbas basis function$plural_nbas built from $nprim primitive gaussian$plural_nprim\n\n"
     for m in mvals
         # Add sub minus sign (0x208B) if necessary
         m_sub = m < 0 ? Char(0x208B)*Char(0x2080 - m) : Char(0x2080 + m)
@@ -66,9 +71,14 @@ function string_repr(B::CartesianShell)
     end
     nprim = length(B.exp)
 
+    atom_name = Molecules.elements[B.atom.Z].name
+    plural_nbas = nbas == 1 ? "" : "s"
+    plural_nprim = nprim == 1 ? "" : "s"
+
     # Reverse Dict(symbol=>num) to get Symbols from B.l
     Lsymbol = Dict(value => key for (key, value) in AMDict)[B.l]
-    out = "$(Lsymbol) shell with $nbas basis built from $nprim primitive gaussians\n\n"
+    out = "$(Lsymbol) shell on $atom_name at position $(B.atom.xyz) Å\n"
+    out *= "Contains $nbas basis function$plural_nbas built from $nprim primitive gaussian$plural_nprim\n\n"
     for m in mvals
         χ = "χ"
         if !isempty(m)
@@ -133,7 +143,7 @@ function string_repr(B::BasisSet{T,Y,P}) where {T,Y,P}
 end
 
 # Pretty printing
-function show(io::IO, ::MIME"text/plain", X::T) where T<:Union{BasisFunction, BasisSet}
+function show(io::IO, ::MIME"text/plain", X::T) where T<:Union{ShellFunction, BasisSet}
     print(io, string_repr(X))
 end
 
@@ -227,7 +237,7 @@ function atomic_orbital_angular_part(shell::SphericalShell, n::Integer, d, d²)
 end
 
 
-function atomic_orbital_amplitude(shell::BasisFunction, n::Integer, r::AbstractArray)
+function atomic_orbital_amplitude(shell::ShellFunction, n::Integer, r::AbstractArray)
     T = promote_type(eltype(shell.coef), eltype(shell.exp), eltype(r), eltype(shell.atom.xyz))
 
     if size(r,1) != 3

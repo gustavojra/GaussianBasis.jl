@@ -13,13 +13,13 @@ const AMDict = Dict(
     )
 
 """
-    read_basisset(::Type{B}, bname::String, atom::A) where {A<:Atom,B<:BasisFunction}
+    read_basisset(::Type{B}, bname::String, atom::A) where {A<:Atom,B<:ShellFunction}
 
-Returns an array of BasisFunction objects for the given `Atom` and basis set name (bname).
+Returns an array of ShellFunction objects for the given `Atom` and basis set name (bname).
 By default, functions are normalized as Spherical functions (spherical=true). If spherical is set to false,
 Cartesian functions are returned instead. 
 """
-function read_basisset(::Type{B}, bname::String, atom::A) where {A<:Atom,B<:BasisFunction}
+function read_basisset(::Type{B}, bname::String, atom::A) where {A<:Atom,B<:ShellFunction}
     AtomSymbol = Molecules.symbol(atom)
 
     # Transform basis name to file name e.g. 6-31g* => 6-31g_st_
@@ -61,12 +61,12 @@ function read_basisset(::Type{B}, bname::String, atom::A) where {A<:Atom,B<:Basi
 end
 
 """
-    parse_basis_string(::Type{B}, bstring::String, atom::A) where {A<:Atom,B<:BasisFunction}
+    parse_basis_string(::Type{B}, bstring::String, atom::A) where {A<:Atom,B<:ShellFunction}
 
 Parse a single basis string and return either one shell or two shells (for SP-type blocks).
 Returns a vector that may contain 1 or 2 shells.
 """
-function parse_basis_string(::Type{B}, bstring::String, atom::A) where {A<:Atom,B<:BasisFunction}
+function parse_basis_string(::Type{B}, bstring::String, atom::A) where {A<:Atom,B<:ShellFunction}
     r = r"[SPDFGHI]{2}"
     if occursin(r, bstring)
         bf1, bf2 = two_basis_from_string(B, bstring, atom)
@@ -113,12 +113,12 @@ function extract_atom_from_bs(file_path::String, AtomSymbol::String)
 end
 
 """
-    GaussianBasis.basis_from_string(::Type{B}, bstring::String, atom::A) where {A<:Atom,B<:BasisFunction}
+    GaussianBasis.basis_from_string(::Type{B}, bstring::String, atom::A) where {A<:Atom,B<:ShellFunction}
 From a String block representing two Basis Function (e.g. SP blocks) in gbs format, returns a
-`BasisFunction` object. For the special case of two basis being described within the 
+`ShellFunction` object. For the special case of two basis being described within the 
 same block (e.g. SP blocks) see `two_basis_from_string`
 """
-function basis_from_string(::Type{B}, bstring::String, atom::A) where {A<:Atom,B<:BasisFunction}
+function basis_from_string(::Type{B}, bstring::String, atom::A) where {A<:Atom,B<:ShellFunction}
     lines = split(strip(bstring), "\n")
     head = lines[1]
     m = match(AM_pat, head)
@@ -151,12 +151,12 @@ function basis_from_string(::Type{B}, bstring::String, atom::A) where {A<:Atom,B
 end
 
 """
-    GaussianBasis.two_basis_from_string(::Type{B}, bstring::String, atom::A) where {A<:Atom,B<:BasisFunction}
+    GaussianBasis.two_basis_from_string(::Type{B}, bstring::String, atom::A) where {A<:Atom,B<:ShellFunction}
 
 From a String block representing two Basis Function (e.g. SP blocks) in gbs format, returns a
-`BasisFunction` object. For the case of a single basis being described within the block see `basis_from_string`
+`ShellFunction` object. For the case of a single basis being described within the block see `basis_from_string`
 """
-function two_basis_from_string(::Type{B}, bstring::String, atom::A) where {A<:Atom,B<:BasisFunction}
+function two_basis_from_string(::Type{B}, bstring::String, atom::A) where {A<:Atom,B<:ShellFunction}
     lines = split(strip(bstring), "\n")
     head = lines[1]
     m = match(AM_pat, head)

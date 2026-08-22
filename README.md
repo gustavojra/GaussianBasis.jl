@@ -222,15 +222,15 @@ that atom's position at all in this degenerate case).
 # Advanced Usage
 
 ## Basis Functions
-`BasisFunction` object is the central data type within this package. Here, `BasisFunction` is an abstract type with two concrete structures: `SphericalShell` and `CartesianShell`. By default `SphericalShell` is created. In general a spherical basis function is
+`ShellFunction` object is the central data type within this package. Here, `ShellFunction` is an abstract type with two concrete structures: `SphericalShell` and `CartesianShell`. By default `SphericalShell` is created. In general a spherical basis function is
 
 ![BF](assets/bf.png)
 
-where the sum goes over primitive functions. A `BasisFunction` object contains the data to reproduce the mathematical object, i.e. the angular momentum number (***l***), expansion coefficients (***c<sub>n</sub>***), and exponential factors (***&xi;<sub>n</sub>***). We can create a basis function by passing these arguments orderly:
+where the sum goes over primitive functions. A `ShellFunction` object contains the data to reproduce the mathematical object, i.e. the angular momentum number (***l***), expansion coefficients (***c<sub>n</sub>***), and exponential factors (***&xi;<sub>n</sub>***). We can create a basis function by passing these arguments orderly:
 ```julia
 julia> using StaticArrays
 julia> atom = GaussianBasis.Atom(8, 16.0, [1.0, 0.0, 0.0])
-julia> bf = BasisFunction(1, SVector(1/√2, 1/√2), SVector(5.0, 1.2), atom)
+julia> bf = ShellFunction(1, SVector(1/√2, 1/√2), SVector(5.0, 1.2), atom)
 P shell with 3 basis built from 2 primitive gaussians
 
 χ₁₋₁ =    0.7071067812⋅Y₁₋₁⋅r¹⋅exp(-5.0⋅r²)
@@ -287,9 +287,9 @@ julia> h2 = GaussianBasis.parse_string(
  ```
 Next, we create a vector of basis functions.
 ```julia
-julia> shells = [BasisFunction(0, SVector(0.5215367271), SVector(0.122), h2[1]),
-BasisFunction(0, SVector(0.5215367271), SVector(0.122), h2[2]),
-BasisFunction(1, SVector(1.9584045349), SVector(0.727), h2[2])];
+julia> shells = [ShellFunction(0, SVector(0.5215367271), SVector(0.122), h2[1]),
+ShellFunction(0, SVector(0.5215367271), SVector(0.122), h2[2]),
+ShellFunction(1, SVector(1.9584045349), SVector(0.727), h2[2])];
 ```
 Finally, we create the basis set object. Note that, you got to make sure your procedure is consistent. The atoms used to construct the basis set object must be in the `atom` vector, otherwise unexpected results may arise. 
 ```julia
