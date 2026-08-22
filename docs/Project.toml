@@ -1,6 +1,7 @@
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 GaussianBasis = "9bb1a3dc-0d1c-467e-84f5-0c4ef701360a"
+LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
 Molecules = "5de6a177-b489-40a9-b2f4-524242b9b679"
 
 [compat]

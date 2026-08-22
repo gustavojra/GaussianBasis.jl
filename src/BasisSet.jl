@@ -26,7 +26,7 @@ Object holding a set of ShellFunction objects associated with an array of atoms.
 # Example
 
 Build a basis set from default options
-```julia
+```julia-repl
 julia> water = \""" 
  O        1.2091536548      1.7664118189     -0.0171613972
  H        2.1984800075      1.7977100627      0.0121161719
@@ -42,7 +42,7 @@ H: 1s
 H: 1s
 ```
 The BasisSet object can be accessed as vector, returning the n-th shell.
-```julia
+```julia-repl
 julia> bset[1] # Show the first shell
 S shell on Oxygen at position [1.2091536548, 1.7664118189, -0.0171613972] Å
 Contains 1 basis function built from 3 primitive gaussians
@@ -52,29 +52,35 @@ Contains 1 basis function built from 3 primitive gaussians
      +    0.8567529838⋅Y₀₀⋅exp(-0.38038896⋅r²)
 ```
 You can also create your own crazy mix!
-Lets create one S and one P basis functions for H
-```julia
+Let us create one S and one P basis functions for H
+```julia-repl
 julia> H1 = GaussianBasis.Atom(:H, 1.0, [0.0, 0.0, 0.0]);
 julia> H2 = GaussianBasis.Atom(:H, 1.0, [0.0, 0.0, 0.7]);
 julia> s = ShellFunction(0, [0.5215367271], [0.122], H1)
 julia> p = ShellFunction(1, [1.9584045349], [0.727], H2)
 ```
-The basis set is constructed with an array of atoms (Vector{Atom}) and a corresponding array of Vector{ShellFunction}
+The basis set is constructed with an array of atoms (`Vector{Atom}`) and a corresponding array of `Vector{ShellFunction}`
 holding all basis functions for that particular atom. In this example, we consider an unequal treatment for the
 two atoms in the H₂ molecule.
-```
-julia> shells = [
-    [s],  # A s function on the first hydrogen
-    [s,p] # One s and one p function on the second hydrogen
-]
-julia> BasisSet("UnequalHydrogens", , shells)
+```julia-repl
+julia> shells = [s, p]  # One s function on the first hydrogen
+                        # One p function on the second hydrogen
+2-element Vector{SphericalShell{Molecules.Atom{Float64, Float64}}}:
+ S shell on Hydrogen (1 basis function, 1 primitive)
+ P shell on Hydrogen (3 basis functions, 1 primitive)
+julia> BasisSet("UnequalHydrogens", shells)
 UnequalHydrogens Basis Set
+Type: Spherical   Backend: Libcint
 Number of shells: 3
 Number of basis:  5
 
 H: 1s 
 H: 1s 1p
 ```
+
+> Note that the number of shells and the number of basis functions are different. Integrals are computed over 
+> shells, while the number of basis functions is the actual number of functions in the basis set and dictates
+> the size of your integral arrays.
 """
 struct BasisSet{L<:IntLib,A<:Atom,B<:ShellFunction}
     name::String
@@ -155,7 +161,15 @@ function BasisSet(name::String, atoms::Vector{A}, basis::Vector{B}, lib::L) wher
     end
     nbas = sum(bpa)
 
-    BasisSet(name, atoms, basis, bpa, spa, natm, nbas, nshells, lib)
+    # `atoms`/`basis` may have an abstract element type here (e.g.
+    # Molecules.parse_string builds `Atom[]`, and `construct_basis_from_library`
+    # builds `B[]` from a bare `::Type{B}`) even though every element pushed
+    # into them is concrete. Narrowing via `identity.` re-infers the tightest
+    # concrete common element type from the actual values, so `BasisSet`'s own
+    # type parameters -- and every subsequent `.atoms[i]`/`.shells[i]` access,
+    # which is on the hot path of every integral routine -- are concrete
+    # instead of boxed.
+    BasisSet(name, identity.(atoms), identity.(basis), bpa, spa, natm, nbas, nshells, lib)
 end
 
 BasisSet(name::String, atoms::Vector{A}, basis::Vector{B}) where {A<:Atom,B<:ShellFunction} =

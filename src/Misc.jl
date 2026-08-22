@@ -127,8 +127,8 @@ end
 
 function string_repr(B::BasisSet{T,Y,P}) where {T,Y,P}
     out  =  "$(B.name) Basis Set\n"
-    out *= "Type: "*replace("$(P)", "Shell"=>"")
-    out *= "   Backend: " 
+    out *= "Type: "*(P <: SphericalShell ? "Spherical" : "Cartesian")
+    out *= "   Backend: "
     if T === GaussianBasis.LCint
         out *= "Libcint\n\n"
     else
