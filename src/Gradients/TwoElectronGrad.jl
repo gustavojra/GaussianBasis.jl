@@ -29,7 +29,7 @@ function ∇ERI_2e4c!(out, BS::BasisSet, iA)
     Ashells = Int[]
     notAshells = Int[]
     for i in 1:BS.nshells
-        b = BS.basis[i]
+        b = BS.shells[i]
         if b.atom == A
             push!(Ashells, i)
         else
@@ -37,7 +37,7 @@ function ∇ERI_2e4c!(out, BS::BasisSet, iA)
         end
     end
 
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
     Nmax = maximum(Nvals)
     #buf_arrays = [zeros(Cdouble, 3*Nmax^4) for _ = 1:Threads.nthreads()]
@@ -219,7 +219,7 @@ caller's responsibility for this form.
 """
 function ∇ERI_2e4c(BS::BasisSet, iA::Int, i::Int, j::Int, k::Int, l::Int)
     on_A = on_atom_flags(BS, iA, i, j, k, l)
-    Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
+    Ni, Nj, Nk, Nl = num_basis(BS.shells[i]), num_basis(BS.shells[j]), num_basis(BS.shells[k]), num_basis(BS.shells[l])
     out = zeros(Ni, Nj, Nk, Nl, 3)
     (!any(on_A) || all(on_A)) && return out
     return ∇ERI_2e4c!(out, BS, on_A, i, j, k, l)
@@ -235,13 +235,13 @@ function ∇ERI_2e4c!(out, BS::BasisSet, iA::Int, i::Int, j::Int, k::Int, l::Int
 end
 
 function ∇ERI_2e4c(BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
-    Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
+    Ni, Nj, Nk, Nl = num_basis(BS.shells[i]), num_basis(BS.shells[j]), num_basis(BS.shells[k]), num_basis(BS.shells[l])
     out = zeros(Ni, Nj, Nk, Nl, 3)
     return ∇ERI_2e4c!(out, BS, on_A, i, j, k, l)
 end
 
 function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
-    Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
+    Ni, Nj, Nk, Nl = num_basis(BS.shells[i]), num_basis(BS.shells[j]), num_basis(BS.shells[k]), num_basis(BS.shells[l])
     Nijkl = Ni*Nj*Nk*Nl
     buf = zeros(Cdouble, 3*Nijkl)
     tmp = zeros(Cdouble, 3*Nijkl)
@@ -268,7 +268,7 @@ function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k
     # allocating permutedims per non-first branch), several GB of GC churn
     # over a full gradient. permutedims! (in-place) replaces permutedims.
 
-    Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
+    Ni, Nj, Nk, Nl = num_basis(BS.shells[i]), num_basis(BS.shells[j]), num_basis(BS.shells[k]), num_basis(BS.shells[l])
 
     if size(out) != (Ni, Nj, Nk, Nl, 3)
         throw(DimensionMismatch("Size of the output array needs to be ($Ni, $Nj, $Nk, $Nl, 3)."))
@@ -332,7 +332,7 @@ looping over atoms) should compute it once and pass it through via the
 `ij_vals`/`σvals` kwargs rather than recomputing it each time.
 """
 function schwarz_bounds(BS::BasisSet)
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     Nmax = maximum(Nvals)
     num_ij = Int((BS.nshells^2 - BS.nshells)/2) + BS.nshells
     ij_vals = Array{NTuple{2,Int32}}(undef, num_ij)
@@ -384,11 +384,11 @@ function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, 
     # Shell indexes for basis in the atom A
     in_A = falses(BS.nshells)
     for i in 1:BS.nshells
-        BS.basis[i].atom == A && (in_A[i] = true)
+        BS.shells[i].atom == A && (in_A[i] = true)
     end
 
     # Pre compute a list of number of basis for each shell (2l +1)
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
     Nmax = maximum(Nvals)
 
@@ -546,7 +546,7 @@ end
 function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA)
 
     atoms = unique(vcat(BS1.atoms, BS2.atoms))
-    basis = vcat(BS1.basis, BS2.basis)
+    basis = vcat(BS1.shells, BS2.shells)
 
     Bmerged = BasisSet("$(BS1.name*BS2.name)", atoms, basis)
 
@@ -560,7 +560,7 @@ function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA)
     Ashells1 = Int[]
     notAshells1 = Int[]
     for i in 1:BS1.nshells
-        b = BS1.basis[i]
+        b = BS1.shells[i]
         if b.atom == A
             push!(Ashells1, i)
         else
@@ -572,7 +572,7 @@ function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA)
     Ashells2 = Int[]
     notAshells2 = Int[]
     for i in 1:BS2.nshells
-        b = BS2.basis[i]
+        b = BS2.shells[i]
         if b.atom == A
             push!(Ashells2, i)
         else
@@ -580,11 +580,11 @@ function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA)
         end
     end
 
-    Nvals1 = num_basis.(BS1.basis)
+    Nvals1 = num_basis.(BS1.shells)
     ao_offset1 = [sum(Nvals1[1:(i-1)]) for i = 1:BS1.nshells]
     Nmax1 = maximum(Nvals1)
 
-    Nvals2 = num_basis.(BS2.basis)
+    Nvals2 = num_basis.(BS2.shells)
     ao_offset2 = [sum(Nvals2[1:(i-1)]) for i = 1:BS2.nshells]
     Nmax2 = maximum(Nvals2)
 
@@ -685,7 +685,7 @@ function ∇ERI_2e2c!(out, BS::BasisSet, iA)
     Ashells = Int[]
     notAshells = Int[]
     for i in 1:BS.nshells
-        b = BS.basis[i]
+        b = BS.shells[i]
         if b.atom == A
             push!(Ashells, i)
         else
@@ -693,7 +693,7 @@ function ∇ERI_2e2c!(out, BS::BasisSet, iA)
         end
     end
 
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
     Nmax = maximum(Nvals)
 

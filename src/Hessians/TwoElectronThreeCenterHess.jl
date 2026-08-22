@@ -47,7 +47,7 @@
 # doesn't depend on finite difference at all.
 
 function eri3c_hess_kernel(kern, merged::BasisSet, shells)
-    Na, Nb, Nc = num_basis.(merged.basis[collect(shells)])
+    Na, Nb, Nc = num_basis.(merged.shells[collect(shells)])
     buf = zeros(Cdouble, 9 * Na * Nb * Nc)
     kern(buf, shells, merged.lib)
     return permutedims(reshape(buf, Na, Nb, Nc, 3, 3), (1, 2, 3, 5, 4))
@@ -113,24 +113,24 @@ function ∇2ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA, iB)
     out .= 0.0
 
     atoms = unique(vcat(BS1.atoms, BS2.atoms))
-    basis = vcat(BS1.basis, BS2.basis)
+    basis = vcat(BS1.shells, BS2.shells)
     Bmerged = BasisSet("$(BS1.name*BS2.name)", atoms, basis)
 
     Aat = BS1.atoms[iA]
     Bat = BS1.atoms[iB]
 
-    Nvals1 = num_basis.(BS1.basis)
+    Nvals1 = num_basis.(BS1.shells)
     ao_offset1 = [sum(Nvals1[1:(i-1)]) for i = 1:BS1.nshells]
 
-    Nvals2 = num_basis.(BS2.basis)
+    Nvals2 = num_basis.(BS2.shells)
     ao_offset2 = [sum(Nvals2[1:(i-1)]) for i = 1:BS2.nshells]
 
     for i = 1:BS1.nshells
-        atom_i = BS1.basis[i].atom
+        atom_i = BS1.shells[i].atom
         for j = i:BS1.nshells
-            atom_j = BS1.basis[j].atom
+            atom_j = BS1.shells[j].atom
             for k = 1:BS2.nshells
-                atom_k = BS2.basis[k].atom
+                atom_k = BS2.shells[k].atom
 
                 Xflag = (atom_i == Aat, atom_j == Aat, atom_k == Aat)
                 Yflag = (atom_i == Bat, atom_j == Bat, atom_k == Bat)

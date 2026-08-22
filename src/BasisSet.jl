@@ -15,7 +15,7 @@ Object holding a set of ShellFunction objects associated with an array of atoms.
 |:------------|:-----------------------------------|:-----------------------------------------------------------|
 |`atoms`      | `Vector{Atom}`                     | An array of `Molecules.Atom` objects  |
 |`name`       | `String`                           | String holding the basis set name  |
-|`basis`      | `Vector{Vector{ShellFunction}}`    | An Array of arrays with ShellFunction          |
+|`shells`     | `Vector{Vector{ShellFunction}}`    | An Array of arrays with ShellFunction          |
 |`natoms`     | `Int32`                            | Number of atoms in the BasisSet |
 |`nbas`       | `Int32`                            | Number of basis functions.  |
 |`nshells`    | `Int32`                            | Number of shells, i.e. ShellFunction objects |
@@ -41,9 +41,9 @@ O: 1s 2s 1p
 H: 1s 
 H: 1s
 ```
-The BasisSet object can be accessed as two-dimensional array.
+The BasisSet object can be accessed as vector, returning the n-th shell.
 ```julia
-julia> bset[1,2] # Show the second basis for the first atom (O 2s)
+julia> bset[1] # Show the first shell
 S shell on Oxygen at position [1.2091536548, 1.7664118189, -0.0171613972] Å
 Contains 1 basis function built from 3 primitive gaussians
 
@@ -54,12 +54,10 @@ Contains 1 basis function built from 3 primitive gaussians
 You can also create your own crazy mix!
 Lets create one S and one P basis functions for H
 ```julia
-julia> h2 = Molecules.parse_string(
-   "H 0.0 0.0 0.0
-    H 0.0 0.0 0.7"
-)
-julia> s = ShellFunction(0, [0.5215367271], [0.122])
-julia> p = ShellFunction(1, [1.9584045349], [0.727])
+julia> H1 = GaussianBasis.Atom(:H, 1.0, [0.0, 0.0, 0.0]);
+julia> H2 = GaussianBasis.Atom(:H, 1.0, [0.0, 0.0, 0.7]);
+julia> s = ShellFunction(0, [0.5215367271], [0.122], H1)
+julia> p = ShellFunction(1, [1.9584045349], [0.727], H2)
 ```
 The basis set is constructed with an array of atoms (Vector{Atom}) and a corresponding array of Vector{ShellFunction}
 holding all basis functions for that particular atom. In this example, we consider an unequal treatment for the
@@ -69,7 +67,7 @@ julia> shells = [
     [s],  # A s function on the first hydrogen
     [s,p] # One s and one p function on the second hydrogen
 ]
-julia> BasisSet("UnequalHydrogens", h2, shells)
+julia> BasisSet("UnequalHydrogens", , shells)
 UnequalHydrogens Basis Set
 Number of shells: 3
 Number of basis:  5
@@ -81,7 +79,7 @@ H: 1s 1p
 struct BasisSet{L<:IntLib,A<:Atom,B<:ShellFunction}
     name::String
     atoms::Vector{A}
-    basis::Vector{B}
+    shells::Vector{B}
     basis_per_atom::Vector{Int}
     shells_per_atom::Vector{Int}
     natoms::Int
@@ -163,6 +161,11 @@ end
 BasisSet(name::String, atoms::Vector{A}, basis::Vector{B}) where {A<:Atom,B<:ShellFunction} =
     BasisSet(name, atoms, basis, LCint(atoms, basis))
 
+# The atoms list is recovered from the shells themselves (deduplicated,
+# first-occurrence order) since each shell already carries its own atom.
+BasisSet(name::String, basis::Vector{B}) where {B<:ShellFunction} =
+    BasisSet(name, unique(b.atom for b in basis), basis)
+
 BasisSet(name::String, atoms::Vector{A}; spherical::Bool=true, lib::Symbol=:libcint) where {A<:Atom} =
     build_basis_from_file(Val(spherical), name, atoms, lib)
 
@@ -189,5 +192,5 @@ function normalize_shell!(::Type{CartesianShell}, coef, exp, l)
 end
 
 function getindex(B::BasisSet, N::Int)
-    return B.basis[N]
+    return B.shells[N]
 end

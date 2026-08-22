@@ -16,7 +16,7 @@ but shouldn't rely on any particular one either.
 """
 function sparseERI_2e4c(BS::BasisSet, cutoff = 1e-12)
     # Pre compute a list of angular momentum numbers (l) for each shell
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     Nmax = maximum(Nvals)
 
     # Offset list for each shell, used to map shell index to AO index
@@ -170,8 +170,8 @@ screened form, see `sparseERI_2e4c`. For repeated calls (e.g. in a hot
 loop), see `ERI_2e4c!` to avoid reallocating.
 """
 function ERI_2e4c(BS::BasisSet, i, j, k, l)
-    out = zeros(eltype(BS.atoms[1].xyz), num_basis(BS.basis[i]), num_basis(BS.basis[j]),
-                num_basis(BS.basis[k]), num_basis(BS.basis[l]))
+    out = zeros(eltype(BS.atoms[1].xyz), num_basis(BS.shells[i]), num_basis(BS.shells[j]),
+                num_basis(BS.shells[k]), num_basis(BS.shells[l]))
     ERI_2e4c!(out, BS, i, j, k, l)
     return out
 end
@@ -205,7 +205,7 @@ end
 
 function ERI_2e4c!(out, BS::BasisSet)
     # Save a list containing the number of basis for each shell
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     Nmax = maximum(Nvals)
 
     # Get slice corresponding to the address in S where the compute chunk goes

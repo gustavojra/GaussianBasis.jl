@@ -64,7 +64,7 @@ are the number of basis functions in each shell. For the full overlap
 matrix, see [`overlap(BS)`](@ref overlap(::BasisSet)).
 """
 function overlap(BS::BasisSet, i, j)
-    out = zeros(num_basis(BS.basis[i]), num_basis(BS.basis[j]))
+    out = zeros(num_basis(BS.shells[i]), num_basis(BS.shells[j]))
     overlap!(out, BS, i, j)
     return out
 end
@@ -77,7 +77,7 @@ indices). Returned as an `(Ni,Nj)` matrix. For the full kinetic energy
 matrix, see [`kinetic(BS)`](@ref kinetic(::BasisSet)).
 """
 function kinetic(BS::BasisSet, i, j)
-    out = zeros(num_basis(BS.basis[i]), num_basis(BS.basis[j]))
+    out = zeros(num_basis(BS.shells[i]), num_basis(BS.shells[j]))
     kinetic!(out, BS, i, j)
     return out
 end
@@ -91,7 +91,7 @@ Compute the AO nuclear attraction block (summed over every nucleus in
 [`nuclear(BS)`](@ref nuclear(::BasisSet)).
 """
 function nuclear(BS::BasisSet, i, j)
-    out = zeros(num_basis(BS.basis[i]), num_basis(BS.basis[j]))
+    out = zeros(num_basis(BS.shells[i]), num_basis(BS.shells[j]))
     nuclear!(out, BS, i, j)
     return out
 end
@@ -157,7 +157,7 @@ function get_1e_matrix!(callback, out, BS::BasisSet, rank::Integer = 0)
     # Zero out the output array
     fill!(out, 0.0)
 
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     Nmax = maximum(Nvals)
 
     # Offset list for each shell, used to map shell index to AO index
@@ -200,15 +200,15 @@ end
 # above: write into a caller-supplied `out` instead of allocating.
 # Backend: ACSint -- fall back
 function overlap!(out, BS1::BasisSet, BS2::BasisSet, i, j)
-    generate_S_pair!(out, BS1.basis[i], BS2.basis[j])
+    generate_S_pair!(out, BS1.shells[i], BS2.shells[j])
 end
 
 function kinetic!(out, BS1::BasisSet, BS2::BasisSet, i, j)
-    generate_T_pair!(out, BS1.basis[i], BS2.basis[j])
+    generate_T_pair!(out, BS1.shells[i], BS2.shells[j])
 end
 
 function nuclear!(out, BS1::BasisSet, BS2::BasisSet, i, j)
-    generate_V_pair!(out, BS1.basis[i], BS2.basis[j], BS1.atoms)
+    generate_V_pair!(out, BS1.shells[i], BS2.shells[j], BS1.atoms)
 end
 
 # General
@@ -222,7 +222,7 @@ of `BS2` (shell indices into each respective basis set). Returned as an
 [`overlap(BS1, BS2)`](@ref overlap(::BasisSet, ::BasisSet)).
 """
 function overlap(BS1::BasisSet, BS2::BasisSet, i, j)
-    out = zeros(num_basis(BS1.basis[i]), num_basis(BS2.basis[j]))
+    out = zeros(num_basis(BS1.shells[i]), num_basis(BS2.shells[j]))
     overlap!(out, BS1, BS2, i, j)
     return out
 end
@@ -235,7 +235,7 @@ of `BS2`. Returned as an `(Ni,Nj)` matrix. For the full mixed-basis matrix,
 see [`kinetic(BS1, BS2)`](@ref kinetic(::BasisSet, ::BasisSet)).
 """
 function kinetic(BS1::BasisSet, BS2::BasisSet, i, j)
-    out = zeros(num_basis(BS1.basis[i]), num_basis(BS2.basis[j]))
+    out = zeros(num_basis(BS1.shells[i]), num_basis(BS2.shells[j]))
     kinetic!(out, BS1, BS2, i, j)
     return out
 end
@@ -249,7 +249,7 @@ For the full mixed-basis matrix, see
 [`nuclear(BS1, BS2)`](@ref nuclear(::BasisSet, ::BasisSet)).
 """
 function nuclear(BS1::BasisSet, BS2::BasisSet, i, j)
-    out = zeros(num_basis(BS1.basis[i]), num_basis(BS2.basis[j]))
+    out = zeros(num_basis(BS1.shells[i]), num_basis(BS2.shells[j]))
     nuclear!(out, BS1, BS2, i, j)
     return out
 end
@@ -298,8 +298,8 @@ end
 function get_1e_matrix!(callback, out, BS1::BasisSet, BS2::BasisSet)
 
     # Pre compute number of basis per shell
-    Nvals1 = num_basis.(BS1.basis)
-    Nvals2 = num_basis.(BS2.basis)
+    Nvals1 = num_basis.(BS1.shells)
+    Nvals2 = num_basis.(BS2.shells)
     Nmax1 = maximum(Nvals1)
     Nmax2 = maximum(Nvals2)
 
@@ -337,13 +337,13 @@ end
 function get_1e_matrix!(callback, out, BS1::BasisSet{LCint}, BS2::BasisSet{LCint})
 
     atoms = unique(vcat(BS1.atoms, BS2.atoms))
-    basis = vcat(BS1.basis, BS2.basis)
+    basis = vcat(BS1.shells, BS2.shells)
 
     Bmerged = BasisSet("$(BS1.name*BS2.name)", atoms, basis)
 
     # Pre compute number of basis per shell
-    Nvals1 = num_basis.(BS1.basis)
-    Nvals2 = num_basis.(BS2.basis)
+    Nvals1 = num_basis.(BS1.shells)
+    Nvals2 = num_basis.(BS2.shells)
     Nmax1 = maximum(Nvals1)
     Nmax2 = maximum(Nvals2)
 

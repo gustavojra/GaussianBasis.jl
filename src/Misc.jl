@@ -129,7 +129,7 @@ function string_repr(B::BasisSet{T,Y,P}) where {T,Y,P}
         # Count how many times s,p,d appears for numbering
         count = zeros(Int16, 7)
         out *= "$(symbol(A)): "
-        for b in B.basis
+        for b in B.shells
             if b.atom == A
                 L = l_to_symbol[b.l]
                 count[b.l+1] += 1
@@ -172,7 +172,7 @@ end
 Whether each of `shells` (any number of shell indices) sits on atom `iA`, as
 an `NTuple{N,Bool}`. Uses `===` rather than `==` to compare `Atom` structs --
 `Atom` is `isbits` and shells share literal object identity with
-`BS.atoms[iA]` (`BS.basis[s].atom === BS.atoms[iA]` holds whenever shell `s`
+`BS.atoms[iA]` (`BS.shells[s].atom === BS.atoms[iA]` holds whenever shell `s`
 belongs to atom `iA`), so `===` compiles to a direct bitwise compare instead
 of dispatching through `==` on each of `Atom`'s fields (including an
 `SVector` of `Float64`s) -- measured about 2x faster over many repeated
@@ -181,7 +181,7 @@ gradient/Hessian screening loops, so the difference is not noise.
 """
 function on_atom_flags(BS::BasisSet, iA::Int, shells...)
     A = BS.atoms[iA]
-    return ntuple(p -> BS.basis[shells[p]].atom === A, length(shells))
+    return ntuple(p -> BS.shells[shells[p]].atom === A, length(shells))
 end
 
 
@@ -266,7 +266,7 @@ function find_shell_m(B::BasisSet, idx::Integer)
     end
 
     n = idx
-    for shell in B.basis
+    for shell in B.shells
         if n - (2shell.l +1) <= 0
             return shell, n
         end

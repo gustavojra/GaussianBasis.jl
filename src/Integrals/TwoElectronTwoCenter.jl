@@ -4,7 +4,7 @@
 # fallback (here standing in for the two missing centers of a 4-center
 # integral).
 function ERI_2e2c!(out, BS::BasisSet, i, j)
-    generate_ERI_quartet!(out, BS.basis[i], _ghostBF, BS.basis[j], _ghostBF)
+    generate_ERI_quartet!(out, BS.shells[i], _ghostBF, BS.shells[j], _ghostBF)
 end
 
 function ERI_2e2c!(out, BS::BasisSet{LCint}, i, j)

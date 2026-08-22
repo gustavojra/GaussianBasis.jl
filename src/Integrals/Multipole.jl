@@ -18,7 +18,7 @@ array, the trailing axis indexing the `x,y,z` Cartesian components. For the
 full dipole tensor, see [`dipole(BS)`](@ref dipole(::BasisSet)).
 """
 function dipole(BS::BasisSet, i, j)
-    out = zeros(num_basis(BS.basis[i]), num_basis(BS.basis[j]), 3)
+    out = zeros(num_basis(BS.shells[i]), num_basis(BS.shells[j]), 3)
     dipole!(out, BS, i, j)
     return out
 end
@@ -33,7 +33,7 @@ components of each `r` factor. For the full tensor, see
 [`quadrupole(BS)`](@ref quadrupole(::BasisSet)).
 """
 function quadrupole(BS::BasisSet, i, j)
-    out = zeros(num_basis(BS.basis[i]), num_basis(BS.basis[j]), 3, 3)
+    out = zeros(num_basis(BS.shells[i]), num_basis(BS.shells[j]), 3, 3)
     quadrupole!(out, BS, i, j)
     return out
 end
@@ -47,7 +47,7 @@ Compute the AO electric octupole integral block `⟨i|rrr|j⟩` for shells
 components of each `r` factor. For the full tensor, see `octupole(BS)`.
 """
 function octupole(BS::BasisSet, i, j)
-    out = zeros(num_basis(BS.basis[i]), num_basis(BS.basis[j]), 3, 3, 3)
+    out = zeros(num_basis(BS.shells[i]), num_basis(BS.shells[j]), 3, 3, 3)
     octupole!(out, BS, i, j)
     return out
 end
@@ -61,7 +61,7 @@ Compute the AO electric hexadecapole integral block `⟨i|rrrr|j⟩` for shells
 components of each `r` factor. For the full tensor, see `hexadecapole(BS)`.
 """
 function hexadecapole(BS::BasisSet, i, j)
-    out = zeros(num_basis(BS.basis[i]), num_basis(BS.basis[j]), 3, 3, 3, 3)
+    out = zeros(num_basis(BS.shells[i]), num_basis(BS.shells[j]), 3, 3, 3, 3)
     hexadecapole!(out, BS, i, j)
     return out
 end

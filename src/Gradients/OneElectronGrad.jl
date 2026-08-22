@@ -24,7 +24,7 @@ function ∇1e!(out, BS::BasisSet, compute::String, iA)
     Ashells = Int[]
     notAshells = Int[]
     for i in 1:BS.nshells
-        b = BS.basis[i]
+        b = BS.shells[i]
         if b.atom == A
             push!(Ashells, i)
         else
@@ -32,7 +32,7 @@ function ∇1e!(out, BS::BasisSet, compute::String, iA)
         end
     end
 
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
     Nmax = maximum(Nvals)
 
@@ -136,8 +136,8 @@ identical structure and zero-block cases, `T` in place of `S`.
 ∇kinetic!(out, BS::BasisSet, iA::Int, i::Int, j::Int) = ∇1e_pair!(out, BS, "kinetic", iA, i, j)
 
 function ∇1e_pair(BS::BasisSet, compute::String, iA::Int, i::Int, j::Int)
-    Ni = num_basis(BS.basis[i])
-    Nj = num_basis(BS.basis[j])
+    Ni = num_basis(BS.shells[i])
+    Nj = num_basis(BS.shells[j])
     out = zeros(Ni, Nj, 3)
     return ∇1e_pair!(out, BS, compute, iA, i, j)
 end
@@ -153,10 +153,10 @@ function ∇1e_pair!(out, BS::BasisSet, compute::String, iA::Int, P::Int, Q::Int
     end
 
     A = BS.atoms[iA]
-    P_on_A = BS.basis[P].atom == A
-    Q_on_A = BS.basis[Q].atom == A
-    Np = num_basis(BS.basis[P])
-    Nq = num_basis(BS.basis[Q])
+    P_on_A = BS.shells[P].atom == A
+    Q_on_A = BS.shells[Q].atom == A
+    Np = num_basis(BS.shells[P])
+    Nq = num_basis(BS.shells[Q])
 
     if size(out) != (Np, Nq, 3)
         throw(DimensionMismatch("Size of the output array needs to be ($Np, $Nq, 3)"))
@@ -230,7 +230,7 @@ function ∇nuclear!(out, BS::BasisSet, iA)
     Ashells = Int[]
     notAshells = Int[]
     for i in 1:BS.nshells
-        b = BS.basis[i]
+        b = BS.shells[i]
         if b.atom == A
             push!(Ashells, i)
         else
@@ -238,7 +238,7 @@ function ∇nuclear!(out, BS::BasisSet, iA)
         end
     end
     
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
     Nmax = maximum(Nvals)
     # i ∉ A & j ∉ A
@@ -356,18 +356,18 @@ below are the bra-derivative `cint1e_ipnuc_sph!` kernel at shell pair
 this one rebuilds the fudged nuclear-charge arrays on every call.
 """
 function ∇nuclear(BS::BasisSet, iA::Int, P::Int, Q::Int)
-    Np = num_basis(BS.basis[P])
-    Nq = num_basis(BS.basis[Q])
+    Np = num_basis(BS.shells[P])
+    Nq = num_basis(BS.shells[Q])
     out = zeros(Np, Nq, 3)
     return ∇nuclear!(out, BS, iA, P, Q)
 end
 
 function ∇nuclear!(out, BS::BasisSet, iA::Int, P::Int, Q::Int)
     A = BS.atoms[iA]
-    P_on_A = BS.basis[P].atom == A
-    Q_on_A = BS.basis[Q].atom == A
-    Np = num_basis(BS.basis[P])
-    Nq = num_basis(BS.basis[Q])
+    P_on_A = BS.shells[P].atom == A
+    Q_on_A = BS.shells[Q].atom == A
+    Np = num_basis(BS.shells[P])
+    Nq = num_basis(BS.shells[Q])
 
     if size(out) != (Np, Nq, 3)
         throw(DimensionMismatch("Size of the output array needs to be ($Np, $Nq, 3)"))
@@ -399,8 +399,8 @@ end
 # caller-supplied (possibly charge-fudged) atm array, reshaped from libcint's
 # flat 3-chunk buffer layout into an (Np,Nq,3) block.
 function _nuc_pair_kernel(BS::BasisSet, charge_atm, p::Int, q::Int)
-    Np = num_basis(BS.basis[p])
-    Nq = num_basis(BS.basis[q])
+    Np = num_basis(BS.shells[p])
+    Nq = num_basis(BS.shells[q])
     Npq = Np*Nq
     buf = zeros(Cdouble, 3*Npq)
     cint1e_ipnuc_sph!(buf, Cint.([p-1,q-1]), charge_atm, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)

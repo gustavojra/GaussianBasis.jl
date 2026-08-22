@@ -72,7 +72,7 @@ end
     # underlying computation, no independent derivation, just a different
     # slicing -- so this checks self-consistency, not the integrals
     # themselves, which the FD tests above already cover).
-    Nvals = GaussianBasis.num_basis.(bs.basis)
+    Nvals = GaussianBasis.num_basis.(bs.shells)
     ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:bs.nshells]
 
     function assemble(f, iA)
@@ -117,7 +117,7 @@ end
         # ∇ERI_2e4c(BS, iA) exactly (same underlying formula, no
         # permutation-symmetry propagation, just direct per-quartet calls --
         # self-consistency check, not a fresh integral validation).
-        Nvals = GaussianBasis.num_basis.(bs.basis)
+        Nvals = GaussianBasis.num_basis.(bs.shells)
         ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:bs.nshells]
         for iA = 1:length(atoms)
             dense = ∇ERI_2e4c(bs, iA)

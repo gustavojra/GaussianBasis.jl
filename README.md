@@ -306,7 +306,7 @@ The most import fields here are:
 ```julia
 julia> bset.name == "UnequalHydrogens"
 true
-julia> bset.basis == shells 
+julia> bset.shells == shells 
 true
 julia> bset.atoms == h2
 true

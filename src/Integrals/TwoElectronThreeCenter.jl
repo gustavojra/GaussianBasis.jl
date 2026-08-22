@@ -10,7 +10,7 @@ function ERI_2e3c!(out, BS::BasisSet{LCint}, i, j, k)
 end
 
 function ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, i, j, k)
-    generate_ERI_quartet!(out, BS1.basis[i], BS1.basis[j], BS2.basis[k], _ghostBF)
+    generate_ERI_quartet!(out, BS1.shells[i], BS1.shells[j], BS2.shells[k], _ghostBF)
 end
 
 """
@@ -31,8 +31,8 @@ end
 function ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet)
 
     # Pre compute number of basis per shell
-    Nvals1 = num_basis.(BS1.basis)
-    Nvals2 = num_basis.(BS2.basis)
+    Nvals1 = num_basis.(BS1.shells)
+    Nvals2 = num_basis.(BS2.shells)
     Nmax1 = maximum(Nvals1)
     Nmax2 = maximum(Nvals2)
 
@@ -78,13 +78,13 @@ end
 function ERI_2e3c!(out, BS1::BasisSet{LCint}, BS2::BasisSet{LCint})
 
     atoms = unique(vcat(BS1.atoms, BS2.atoms))
-    basis = vcat(BS1.basis, BS2.basis)
+    basis = vcat(BS1.shells, BS2.shells)
 
     Bmerged = BasisSet("$(BS1.name*BS2.name)", atoms, basis)
 
     # Pre compute number of basis per shell
-    Nvals1 = num_basis.(BS1.basis)
-    Nvals2 = num_basis.(BS2.basis)
+    Nvals1 = num_basis.(BS1.shells)
+    Nvals2 = num_basis.(BS2.shells)
     Nmax1 = maximum(Nvals1)
     Nmax2 = maximum(Nvals2)
 

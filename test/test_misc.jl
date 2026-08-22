@@ -26,7 +26,7 @@ bset = BasisSet("Test", atoms, shells)
         @test occursin(r"C: 1s 1p\s+?\nH: 1s\s+?\nH: 1s\s+?\nH: 1s\s+?\nH: 1s\s*", GaussianBasis.string_repr(bset))
     end
 
-    @test bset[1] == bset.basis[1]
+    @test bset[1] == bset.shells[1]
 
     @testset "legendre_polynomial" begin
         examples = [
