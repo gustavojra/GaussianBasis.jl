@@ -66,7 +66,7 @@ julia> S = overlap(bset);
  0.00410862  0.0644883  -0.0572785  0.0447509  0.0  0.0100209    1.0
 ```
 
-## Basis sets and library structure
+## Basis sets and Shell functions
 
 ```@docs
 BasisSet
