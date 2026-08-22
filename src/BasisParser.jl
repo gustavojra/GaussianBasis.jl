@@ -91,17 +91,23 @@ function extract_atom_from_bs(file_path::String, AtomSymbol::String)
     # Output is an array of strings (corresponding to the lines of the block matching the desired atom)
     out = String[]
 
-    # Iterate through the lines of the file until the atom is found
-    for line in eachline(file_path)
+    # Iterate through the lines of the file until the atom is found. Uses
+    # `open(...) do io` rather than `eachline(file_path)` so the file handle
+    # is closed deterministically on the `break` below -- `eachline` on a
+    # path only closes via its `ondone` callback when iteration reaches EOF
+    # naturally, which never happens here since we always stop early once the
+    # target atom's block ends.
+    open(file_path) do io
+        for line in eachline(io)
+            if occursin(atom_pat, line)
+                flag_atom = true
+                continue
+            end
 
-        if occursin(atom_pat, line)
-            flag_atom = true
-            continue
-        end
-
-        if flag_atom
-            occursin(raw"****", line) ? break : nothing
-            push!(out, String(line))
+            if flag_atom
+                occursin(raw"****", line) ? break : nothing
+                push!(out, String(line))
+            end
         end
     end
 
