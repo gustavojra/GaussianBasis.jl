@@ -133,6 +133,9 @@ function construct_basis_from_library(::Type{B}, name::String, atoms::Vector{A},
 end
 
 function construct_basis_from_library(::Type{B}, name::String, atoms::Vector{A}, ::Val{:acsint}) where {B<:ShellFunction,A<:Atom}
+    B <: SphericalShell && throw(ArgumentError(
+        "the ACSint backend (lib=:acsint) only supports Cartesian shells -- pass spherical=false"
+    ))
     basis = B[]
     for atom in atoms
         append!(basis, read_basisset(B, name, atom))
