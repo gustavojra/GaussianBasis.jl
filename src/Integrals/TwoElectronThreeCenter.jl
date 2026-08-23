@@ -21,13 +21,21 @@ Compute the full two-electron three-center integral tensor `(μν|P)`, with
 `BS2`'s (the auxiliary/fitting basis) -- the building block for density
 fitting / resolution-of-the-identity approximations. Returns a dense
 `BS1.nbas × BS1.nbas × BS2.nbas` array, symmetric under `μ↔ν` swap. For
-repeated calls, see `ERI_2e3c!`.
+repeated calls, see `ERI_2e3c!`, which writes into a preallocated array
+instead of allocating.
 """
 function ERI_2e3c(BS1::BasisSet, BS2::BasisSet)
     out = zeros(BS1.nbas, BS1.nbas, BS2.nbas)
     ERI_2e3c!(out, BS1, BS2)
 end
 
+"""
+    ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet)
+
+Mutating counterpart of [`ERI_2e3c`](@ref): writes the full `(μν|P)` tensor
+into the caller-supplied `out` (a dense `BS1.nbas × BS1.nbas × BS2.nbas`
+array) instead of allocating.
+"""
 function ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet)
 
     # Pre compute number of basis per shell

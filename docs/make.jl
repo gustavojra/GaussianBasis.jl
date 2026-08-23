@@ -18,9 +18,8 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
-        "One-Electron Integrals" => "overlap.md",
+        "One-Electron Integrals" => "oneelectron.md",
         "Two-Electron Integrals" => "eri.md",
-        "Multipole Integrals" => "multipole.md",
         "Gradients" => "gradients.md",
         "Hessians" => "hessians.md",
     ],
