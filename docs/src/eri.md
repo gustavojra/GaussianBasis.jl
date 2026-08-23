@@ -57,12 +57,11 @@ dense tensor.
 ```julia-repl
 julia> idx, vals = sparseERI_2e4c(bset)
 
-julia> vals[5]  # A non-zero integral value...
+julia> n = findfirst(==((1, 2, 2, 2)), idx) # For example reproducibility.
+julia> vals[n]  # A non-zero integral value...
 0.25663337137335623
-julia> idx[5] # ... and its corresponding basis function index.
-(1, 2, 2, 2)
 
-julia> vals[5] ≈ I[idx[5]...]
+julia> vals[n] ≈ I[idx[n]...]
 true
 
 julia> I[1,1,5,7] # Zero or near zero elements are not contained in `idx` and `vals`
@@ -84,9 +83,11 @@ julia> length(idx)   # number of unique, screened-surviving elements
 228
 
 julia> length(I) / length(idx) # Fraction of non-zero elements
-10.530701754385966 # The full ERI is ~ 10x larger 
+10.530701754385966
 ```
->The ordering within `idx` and `vals` returned from `sparse_ERI` is arbitrary.
+The full ERI is thus ~10x larger than its sparse, screened counterpart.
+
+> The ordering within `idx` and `vals` returned from `sparseERI_2e4c` is arbitrary.
 
 In many cases, storing the full ERI array, even in sparse form, becomes impossible. In these cases, the per-shell-quartet option is also available:
 ```julia-repl
