@@ -5,7 +5,8 @@ using Format
 using StaticArrays
 import Molecules: Atom, symbol, parse_file, parse_string
 
-export ShellFunction, BasisSet, SphericalShell, CartesianShell, get_shell, ACSint, LCint, atomic_orbital_amplitude
+export ShellFunction, BasisSet, SphericalShell, CartesianShell
+export get_shell, ACSint, LCint, atomic_orbital_amplitude, num_basis
 
 abstract type ShellFunction end
 
