@@ -4,11 +4,22 @@
 # Backend: Libcint
 """
     overlap!(out, BS::BasisSet, i, j)
+    overlap!(out, BS::BasisSet)
+    overlap!(out, BS1::BasisSet, BS2::BasisSet, i, j)
+    overlap!(out, BS1::BasisSet, BS2::BasisSet)
 
-Compute the AO overlap block `⟨i|j⟩` for shells `i` and `j` of `BS` (shell
-indices, not AO indices), writing the output into `out` which must be a `(Ni,Nj)` matrix where `Ni`/`Nj`
-are the number of basis functions in each shell. For the full overlap
-matrix, see [`overlap!(out, BS)`](@ref overlap!(::Any, ::BasisSet)).
+Mutating counterpart of [`overlap`](@ref): writes into the caller-supplied
+`out` instead of allocating. This shell-pair, single-basis form is the
+primitive every other method builds on.
+
+# Methods
+
+  - `overlap!(out, BS, i, j)`: `out` must be `(Ni,Nj)`, the block for shells
+    `i`/`j` of `BS` (shell indices, not AO indices).
+  - `overlap!(out, BS)`: `out` must be a dense `nbas × nbas` matrix.
+  - `overlap!(out, BS1, BS2, i, j)`: `out` must be `(Ni,Nj)`, the block for
+    shell `i` of `BS1` and shell `j` of `BS2`.
+  - `overlap!(out, BS1, BS2)`: `out` must be `BS1.nbas × BS2.nbas`.
 """
 function overlap!(out, BS::BasisSet{LCint}, i, j)
     cint1e_ovlp_sph!(out, @SVector([i,j]), BS.lib)
@@ -16,12 +27,22 @@ end
 
 """
     kinetic!(out, BS::BasisSet, i, j)
+    kinetic!(out, BS::BasisSet)
+    kinetic!(out, BS1::BasisSet, BS2::BasisSet, i, j)
+    kinetic!(out, BS1::BasisSet, BS2::BasisSet)
 
-Compute the AO kinetic energy block for shells `i` and `j` of `BS` (shell
-indices, not AO indices), writing the output into `out` which must be a
-`(Ni,Nj)` matrix where `Ni`/`Nj` are the number of basis functions in each
-shell. For the full kinetic energy matrix, see
-[`kinetic!(out, BS)`](@ref kinetic!(::Any, ::BasisSet)).
+Mutating counterpart of [`kinetic`](@ref): writes into the caller-supplied
+`out` instead of allocating. This shell-pair, single-basis form is the
+primitive every other method builds on.
+
+# Methods
+
+  - `kinetic!(out, BS, i, j)`: `out` must be `(Ni,Nj)`, the block for shells
+    `i`/`j` of `BS` (shell indices, not AO indices).
+  - `kinetic!(out, BS)`: `out` must be a dense `nbas × nbas` matrix.
+  - `kinetic!(out, BS1, BS2, i, j)`: `out` must be `(Ni,Nj)`, the block for
+    shell `i` of `BS1` and shell `j` of `BS2`.
+  - `kinetic!(out, BS1, BS2)`: `out` must be `BS1.nbas × BS2.nbas`.
 """
 function kinetic!(out, BS::BasisSet{LCint}, i, j)
     cint1e_kin_sph!(out, @SVector([i,j]), BS.lib)
@@ -29,18 +50,28 @@ end
 
 """
     nuclear!(out, BS::BasisSet, i, j)
+    nuclear!(out, BS::BasisSet)
+    nuclear!(out, BS1::BasisSet, BS2::BasisSet, i, j)
+    nuclear!(out, BS1::BasisSet, BS2::BasisSet)
 
-Compute the AO nuclear attraction block (summed over every nucleus in
-`BS.atoms`) for shells `i` and `j` of `BS` (shell indices, not AO indices),
-writing the output into `out` which must be a `(Ni,Nj)` matrix where `Ni`/`Nj`
-are the number of basis functions in each shell. For the full nuclear
-attraction matrix, see [`nuclear!(out, BS)`](@ref nuclear!(::Any, ::BasisSet)).
+Mutating counterpart of [`nuclear`](@ref): writes into the caller-supplied
+`out` instead of allocating. This shell-pair, single-basis form is the
+primitive every other method builds on.
+
+# Methods
+
+  - `nuclear!(out, BS, i, j)`: `out` must be `(Ni,Nj)`, the block for shells
+    `i`/`j` of `BS` (shell indices, not AO indices).
+  - `nuclear!(out, BS)`: `out` must be a dense `nbas × nbas` matrix.
+  - `nuclear!(out, BS1, BS2, i, j)`: `out` must be `(Ni,Nj)`, the block for
+    shell `i` of `BS1` and shell `j` of `BS2`.
+  - `nuclear!(out, BS1, BS2)`: `out` must be `BS1.nbas × BS2.nbas`.
 """
 function nuclear!(out, BS::BasisSet{LCint}, i, j)
     cint1e_nuc_sph!(out, @SVector([i,j]), BS.lib)
 end
 
-# Backend: ACSint -- fall back 
+# Backend: ACSint -- fall back
 function overlap!(out, BS::BasisSet, i, j)
     generate_S_pair!(out, BS, i ,j)
 end
@@ -55,41 +86,18 @@ end
 
 # General
 
-"""
-    overlap(BS::BasisSet, i, j) -> Matrix{Float64}
-
-Compute the AO overlap block `⟨i|j⟩` for shells `i` and `j` of `BS` (shell
-indices, not AO indices), returned as an `(Ni,Nj)` matrix where `Ni`/`Nj`
-are the number of basis functions in each shell. For the full overlap
-matrix, see [`overlap(BS)`](@ref overlap(::BasisSet)).
-"""
 function overlap(BS::BasisSet, i, j)
     out = zeros(num_basis(BS.shells[i]), num_basis(BS.shells[j]))
     overlap!(out, BS, i, j)
     return out
 end
 
-"""
-    kinetic(BS::BasisSet, i, j) -> Matrix{Float64}
-
-Compute the AO kinetic energy block for shells `i` and `j` of `BS` (shell
-indices). Returned as an `(Ni,Nj)` matrix. For the full kinetic energy
-matrix, see [`kinetic(BS)`](@ref kinetic(::BasisSet)).
-"""
 function kinetic(BS::BasisSet, i, j)
     out = zeros(num_basis(BS.shells[i]), num_basis(BS.shells[j]))
     kinetic!(out, BS, i, j)
     return out
 end
 
-"""
-    nuclear(BS::BasisSet, i, j) -> Matrix{Float64}
-
-Compute the AO nuclear attraction block (summed over every nucleus in
-`BS.atoms`) for shells `i` and `j` of `BS` (shell indices). Returned as an
-`(Ni,Nj)` matrix. For the full nuclear attraction matrix, see
-[`nuclear(BS)`](@ref nuclear(::BasisSet)).
-"""
 function nuclear(BS::BasisSet, i, j)
     out = zeros(num_basis(BS.shells[i]), num_basis(BS.shells[j]))
     nuclear!(out, BS, i, j)
@@ -98,53 +106,79 @@ end
 
 """
     overlap(BS::BasisSet) -> Matrix{Float64}
+    overlap(BS::BasisSet, i, j) -> Matrix{Float64}
+    overlap(BS1::BasisSet, BS2::BasisSet) -> Matrix{Float64}
+    overlap(BS1::BasisSet, BS2::BasisSet, i, j) -> Matrix{Float64}
 
-Compute the AO overlap matrix `S` for `BS`. Returns a dense, symmetric
-`nbas × nbas` matrix. For repeated calls (e.g. reusing a preallocated
-array), see `overlap!`.
+Compute the AO overlap matrix `S_{μν} = ⟨χ_μ|χ_ν⟩`.
+
+# Methods
+
+  - `overlap(BS)`: full, dense, symmetric `nbas × nbas` matrix for `BS`.
+  - `overlap(BS, i, j)`: just the `(Ni,Nj)` block for shells `i` and `j` of
+    `BS` (shell indices, not AO indices).
+  - `overlap(BS1, BS2)`: mixed-basis matrix, `μ` running over `BS1` and `ν`
+    over `BS2` -- a dense `BS1.nbas × BS2.nbas` matrix, not generally
+    symmetric. Useful e.g. for projecting a density or orbitals from one
+    basis onto another.
+  - `overlap(BS1, BS2, i, j)`: mixed-basis block between shell `i` of `BS1`
+    and shell `j` of `BS2`.
+
+For repeated calls (e.g. in a hot loop or a geometry scan), see `overlap!`,
+which writes into a preallocated array instead of allocating.
 """
 overlap(BS::BasisSet) = get_1e_matrix(overlap!, BS)
 
 """
     kinetic(BS::BasisSet) -> Matrix{Float64}
+    kinetic(BS::BasisSet, i, j) -> Matrix{Float64}
+    kinetic(BS1::BasisSet, BS2::BasisSet) -> Matrix{Float64}
+    kinetic(BS1::BasisSet, BS2::BasisSet, i, j) -> Matrix{Float64}
 
-Compute the AO kinetic energy matrix `T` for `BS`. Returns a dense,
-symmetric `nbas × nbas` matrix. For repeated calls, see `kinetic!`.
+Compute the AO kinetic energy matrix `T`.
+
+# Methods
+
+  - `kinetic(BS)`: full, dense, symmetric `nbas × nbas` matrix for `BS`.
+  - `kinetic(BS, i, j)`: just the `(Ni,Nj)` block for shells `i` and `j` of
+    `BS` (shell indices, not AO indices).
+  - `kinetic(BS1, BS2)`: mixed-basis matrix, `BS1.nbas × BS2.nbas`. See
+    [`overlap`](@ref) for the general mixed-basis convention.
+  - `kinetic(BS1, BS2, i, j)`: mixed-basis block between shell `i` of `BS1`
+    and shell `j` of `BS2`.
+
+For repeated calls, see `kinetic!`, which writes into a preallocated array
+instead of allocating.
 """
 kinetic(BS::BasisSet) = get_1e_matrix(kinetic!, BS)
 
 """
     nuclear(BS::BasisSet) -> Matrix{Float64}
+    nuclear(BS::BasisSet, i, j) -> Matrix{Float64}
+    nuclear(BS1::BasisSet, BS2::BasisSet) -> Matrix{Float64}
+    nuclear(BS1::BasisSet, BS2::BasisSet, i, j) -> Matrix{Float64}
 
-Compute the AO nuclear attraction matrix `V` for `BS` (potential from every
-nucleus in `BS.atoms`, summed). Returns a dense, symmetric `nbas × nbas`
-matrix. For repeated calls, see `nuclear!`.
+Compute the AO nuclear attraction matrix `V` (potential from every nucleus
+in `BS.atoms`, summed).
+
+# Methods
+
+  - `nuclear(BS)`: full, dense, symmetric `nbas × nbas` matrix for `BS`.
+  - `nuclear(BS, i, j)`: just the `(Ni,Nj)` block for shells `i` and `j` of
+    `BS` (shell indices, not AO indices).
+  - `nuclear(BS1, BS2)`: mixed-basis matrix (nuclei taken from `BS1.atoms`),
+    `BS1.nbas × BS2.nbas`. See [`overlap`](@ref) for the general mixed-basis
+    convention.
+  - `nuclear(BS1, BS2, i, j)`: mixed-basis block between shell `i` of `BS1`
+    and shell `j` of `BS2`, using the nuclei of `BS1`.
+
+For repeated calls, see `nuclear!`, which writes into a preallocated array
+instead of allocating.
 """
 nuclear(BS::BasisSet) = get_1e_matrix(nuclear!, BS)
 
-"""
-    overlap!(out, BS::BasisSet)
-
-Compute the AO overlap matrix `S` for `BS`. The output is written into `out` which must be a dense
-`nbas × nbas` matrix.
-"""
 overlap!(out, BS::BasisSet) = get_1e_matrix!(overlap!, out, BS)
-
-"""
-    kinetic!(out, BS::BasisSet)
-
-Compute the AO kinetic energy matrix `T` for `BS`. The output is written into `out` which must be a
-dense `nbas × nbas` matrix.
-"""
 kinetic!(out, BS::BasisSet) = get_1e_matrix!(kinetic!, out, BS)
-
-"""
-    nuclear!(out, BS::BasisSet)
-
-Compute the AO nuclear attraction matrix `V` for `BS` (potential from every
-nucleus in `BS.atoms`, summed). The output is written into `out` which must be a dense `nbas × nbas`
-matrix.
-"""
 nuclear!(out, BS::BasisSet) = get_1e_matrix!(nuclear!, out, BS)
 
 function get_1e_matrix(callback, BS::BasisSet, rank::Integer = 0)
@@ -190,11 +224,11 @@ function get_1e_matrix!(callback, out, BS::BasisSet, rank::Integer = 0)
     return out
 end
 
-########################################################### 
-########################################################### 
+###########################################################
+###########################################################
 #                       Mixed basis                       #
-########################################################### 
-########################################################### 
+###########################################################
+###########################################################
 
 # Mutating, shell-pair-level forms of the mixed-basis overlap/kinetic/nuclear
 # above: write into a caller-supplied `out` instead of allocating.
@@ -213,75 +247,26 @@ end
 
 # General
 
-"""
-    overlap(BS1::BasisSet, BS2::BasisSet, i, j) -> Matrix{Float64}
-
-Mixed-basis overlap block `⟨i|j⟩` between shell `i` of `BS1` and shell `j`
-of `BS2` (shell indices into each respective basis set). Returned as an
-`(Ni,Nj)` matrix. For the full mixed-basis matrix, see
-[`overlap(BS1, BS2)`](@ref overlap(::BasisSet, ::BasisSet)).
-"""
 function overlap(BS1::BasisSet, BS2::BasisSet, i, j)
     out = zeros(num_basis(BS1.shells[i]), num_basis(BS2.shells[j]))
     overlap!(out, BS1, BS2, i, j)
     return out
 end
 
-"""
-    kinetic(BS1::BasisSet, BS2::BasisSet, i, j) -> Matrix{Float64}
-
-Mixed-basis kinetic energy block between shell `i` of `BS1` and shell `j`
-of `BS2`. Returned as an `(Ni,Nj)` matrix. For the full mixed-basis matrix,
-see [`kinetic(BS1, BS2)`](@ref kinetic(::BasisSet, ::BasisSet)).
-"""
 function kinetic(BS1::BasisSet, BS2::BasisSet, i, j)
     out = zeros(num_basis(BS1.shells[i]), num_basis(BS2.shells[j]))
     kinetic!(out, BS1, BS2, i, j)
     return out
 end
 
-"""
-    nuclear(BS1::BasisSet, BS2::BasisSet, i, j) -> Matrix{Float64}
-
-Mixed-basis nuclear attraction block between shell `i` of `BS1` and shell
-`j` of `BS2`, using the nuclei of `BS1`. Returned as an `(Ni,Nj)` matrix.
-For the full mixed-basis matrix, see
-[`nuclear(BS1, BS2)`](@ref nuclear(::BasisSet, ::BasisSet)).
-"""
 function nuclear(BS1::BasisSet, BS2::BasisSet, i, j)
     out = zeros(num_basis(BS1.shells[i]), num_basis(BS2.shells[j]))
     nuclear!(out, BS1, BS2, i, j)
     return out
 end
 
-"""
-    overlap(BS1::BasisSet, BS2::BasisSet) -> Matrix{Float64}
-
-Mixed-basis overlap matrix `S_{μν} = ⟨μ|ν⟩` with `μ` running over `BS1`'s
-AOs and `ν` over `BS2`'s. Returns a dense `BS1.nbas × BS2.nbas` matrix (not
-generally symmetric, and not square unless `BS1`/`BS2` have equal size).
-Useful e.g. for projecting a density or orbitals expressed in one basis
-onto another. For repeated calls, see `overlap!`.
-"""
 overlap(BS1::BasisSet, BS2::BasisSet) = get_1e_matrix(overlap!, BS1, BS2)
-
-"""
-    kinetic(BS1::BasisSet, BS2::BasisSet) -> Matrix{Float64}
-
-Mixed-basis kinetic energy matrix, `BS1.nbas × BS2.nbas`. See
-[`overlap(BS1, BS2)`](@ref overlap(::BasisSet, ::BasisSet)) for the general
-mixed-basis convention. For repeated calls, see `kinetic!`.
-"""
 kinetic(BS1::BasisSet, BS2::BasisSet) = get_1e_matrix(kinetic!, BS1, BS2)
-
-"""
-    nuclear(BS1::BasisSet, BS2::BasisSet) -> Matrix{Float64}
-
-Mixed-basis nuclear attraction matrix (nuclei taken from `BS1.atoms`),
-`BS1.nbas × BS2.nbas`. See
-[`overlap(BS1, BS2)`](@ref overlap(::BasisSet, ::BasisSet)) for the general
-mixed-basis convention. For repeated calls, see `nuclear!`.
-"""
 nuclear(BS1::BasisSet, BS2::BasisSet) = get_1e_matrix(nuclear!, BS1, BS2)
 
 # `overlap!`/`kinetic!`/`nuclear!(out, BS1, BS2)` write into a caller-supplied
