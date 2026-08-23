@@ -1,6 +1,6 @@
 using GaussianBasis
 using Combinatorics: doublefactorial
-import Base: getindex, show
+import Base: getindex, show, iterate, length, eltype
 
 include("Libs.jl")
 
@@ -211,3 +211,9 @@ end
 function getindex(B::BasisSet, N::Int)
     return B.shells[N]
 end
+
+# Iterating a BasisSet runs through its shells, the same unit every
+# shell-indexed integral routine (e.g. ERI_2e4c(bset, i, j, k, l)) uses.
+iterate(B::BasisSet, state::Int=1) = state > B.nshells ? nothing : (B[state], state + 1)
+length(B::BasisSet) = B.nshells
+eltype(::Type{BasisSet{L,A,Bf}}) where {L,A,Bf} = Bf
