@@ -5,6 +5,25 @@ const _ghostBF = CartesianShell(0, [1.0], [0.0], Atom(1, 1.0, [0.0, 0.0, 0.0]))
 # backend: LCint uses libcint's native 3-center kernel directly; the ACSint
 # fallback below instead evaluates it as a 4-center integral against a ghost
 # (zero-charge, s-type) basis function standing in for the missing 4th center.
+"""
+    ERI_2e3c!(out, BS::BasisSet, i, j, k)
+    ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet)
+
+Mutating counterpart of [`ERI_2e3c`](@ref): writes into the caller-supplied
+`out` instead of allocating.
+
+# Methods
+
+  - `ERI_2e3c!(out, BS, i, j, k)`: `out` must be `(Ni,Nj,Nk)`, the `(ij|k)`
+    block for shells `i,j,k` of `BS` (shell indices, not AO indices). This
+    is the shell-triple primitive the full-tensor form builds on -- but it
+    takes a single `BasisSet` with the regular and auxiliary shells already
+    merged together, since libcint's 3-center kernel resolves shell indices
+    against one basis. See [Three Centers](@ref) for how to build one and
+    map shell indices into it.
+  - `ERI_2e3c!(out, BS1, BS2)`: `out` must be a dense
+    `BS1.nbas × BS1.nbas × BS2.nbas` array.
+"""
 function ERI_2e3c!(out, BS::BasisSet{LCint}, i, j, k)
     cint3c2e_sph!(out, [i,j,k], BS.lib)
 end
@@ -29,13 +48,6 @@ function ERI_2e3c(BS1::BasisSet, BS2::BasisSet)
     ERI_2e3c!(out, BS1, BS2)
 end
 
-"""
-    ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet)
-
-Mutating counterpart of [`ERI_2e3c`](@ref): writes the full `(μν|P)` tensor
-into the caller-supplied `out` (a dense `BS1.nbas × BS1.nbas × BS2.nbas`
-array) instead of allocating.
-"""
 function ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet)
 
     # Pre compute number of basis per shell

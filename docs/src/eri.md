@@ -160,6 +160,24 @@ julia> out == B
 true
 ```
 
+A per-shell call is also available, but it requires a single basis set.
+Hence, both your regular basis and your auxiliary basis must be merged, and
+you must keep track of shell indexes carefully: shells `1:bset.nshells` of
+the merged basis are the regular shells (unchanged), and shells beyond that
+are the auxiliary ones, offset by `bset.nshells`.
+```julia-repl
+julia> atoms = unique(vcat(bset.atoms, auxbset.atoms));
+
+julia> shells = vcat(bset.shells, auxbset.shells);
+
+julia> merged = BasisSet("merged", atoms, shells);
+
+julia> out = zeros(num_basis(bset[1]), num_basis(bset[1]), num_basis(auxbset[1]))
+julia> ERI_2e3c!(out, merged, 1, 1, bset.nshells + 1) # shell 1 of auxbset is shell (bset.nshells + 1) of merged
+julia> out[1, 1, 1] == B[1, 1, 1] # matches the full dense array from the example above
+true
+```
+
 
 ```@docs
 ERI_2e3c
