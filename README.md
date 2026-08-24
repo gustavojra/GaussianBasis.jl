@@ -4,24 +4,42 @@
 
 <table align="center">
   <tr>
+    <th>Documentation</th>
     <th>CI</th>
     <th>Coverage</th>
     <th>License</th>
   </tr>
   <tr>
     <td align="center">
-      <a href=https://github.com/FermiQC/GaussianBasis.jl/actions/workflows/CI.yml>
-      <img src=https://github.com/FermiQC/GaussianBasis.jl/actions/workflows/CI.yml/badge.svg>
-      </a> 
+      <a href="https://FermiQC.github.io/GaussianBasis.jl/dev/">
+        <img
+          src="https://img.shields.io/badge/docs-dev-blue.svg"
+          alt="Development documentation"
+        >
+      </a>
     </td>
     <td align="center">
-      <a href=https://codecov.io/gh/FermiQC/GaussianBasis.jl>
-      <img src=https://codecov.io/gh/FermiQC/GaussianBasis.jl/branch/main/graph/badge.svg?token=JNouJPwoHm>
-      </a> 
+      <a href="https://github.com/FermiQC/GaussianBasis.jl/actions/workflows/CI.yml">
+        <img
+          src="https://github.com/FermiQC/GaussianBasis.jl/actions/workflows/CI.yml/badge.svg"
+          alt="CI status"
+        >
+      </a>
     </td>
     <td align="center">
-      <a href=https://github.com/FermiQC/GaussianBasis.jl/blob/main/LICENSE>
-      <img src=https://img.shields.io/badge/License-MIT-blue.svg>
+      <a href="https://codecov.io/gh/FermiQC/GaussianBasis.jl">
+        <img
+          src="https://codecov.io/gh/FermiQC/GaussianBasis.jl/branch/main/graph/badge.svg?token=JNouJPwoHm"
+          alt="Code coverage"
+        >
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/FermiQC/GaussianBasis.jl/blob/main/LICENSE">
+        <img
+          src="https://img.shields.io/badge/License-MIT-blue.svg"
+          alt="MIT License"
+        >
       </a>
     </td>
   </tr>
