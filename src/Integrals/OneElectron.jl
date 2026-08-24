@@ -302,7 +302,6 @@ function get_1e_matrix!(callback, out, BS1::BasisSet, BS2::BasisSet)
     workerpool(allocate, 1:BS1.nshells; chunksize = 1) do i, buf
         @inbounds begin
             Li = Nvals1[i]
-            buf = zeros(Cdouble, Nmax1*Nmax2)
             ioff = ao_offset1[i]
             for j in 1:BS2.nshells
                 Lj = Nvals2[j]
