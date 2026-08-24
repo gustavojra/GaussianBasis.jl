@@ -72,9 +72,9 @@ end
 
 Second derivative (Hessian) of the AO nuclear attraction matrix `V` w.r.t.
 atoms `iA`,`iB`'s three Cartesian coordinates each, `∂²V/∂R_iA∂R_iB`
-(accounting for both shell-center and nuclear-charge-position derivatives).
-Returns a dense `nbas × nbas × 3 × 3` array. For repeated calls, see
-`∇2nuclear!`.
+(accounting for both shell-center and nuclear-charge-position derivatives),
+with `R_iA`/`R_iB` in bohr (see [Hessians](@ref) for units). Returns a
+dense `nbas × nbas × 3 × 3` array. For repeated calls, see `∇2nuclear!`.
 """
 function ∇2nuclear(BS::BasisSet, iA, iB)
     out = zeros(BS.nbas, BS.nbas, 3, 3)
@@ -96,7 +96,7 @@ function ∇2nuclear!(out, BS::BasisSet, iA, iB)
     Aat = BS.atoms[iA]
     Bat = BS.atoms[iB]
 
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
     Nmax = maximum(Nvals)
     buf = zeros(Cdouble, 9*Nmax^2)
@@ -122,7 +122,7 @@ function ∇2nuclear!(out, BS::BasisSet, iA, iB)
         Cb = (c == Bat)
 
         for i in 1:BS.nshells
-            atom_i = BS.basis[i].atom
+            atom_i = BS.shells[i].atom
             X_i = (atom_i == Aat)
             Y_i = (atom_i == Bat)
 
@@ -131,7 +131,7 @@ function ∇2nuclear!(out, BS::BasisSet, iA, iB)
             I = (ioff+1):(ioff+Ni)
 
             for j in 1:BS.nshells
-                atom_j = BS.basis[j].atom
+                atom_j = BS.shells[j].atom
                 X_j = (atom_j == Aat)
                 Y_j = (atom_j == Bat)
 

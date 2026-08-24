@@ -17,6 +17,14 @@ returned as two extra trailing length-3 axes (``x,y,z`` for `A`, then `B`).
 These feed analytic vibrational frequency calculations and second-order
 response (CPHF/CPKS) machinery.
 
+!!! warning "Units: `R_A`/`R_B` are in bohr, not Angstrom"
+    As with [Gradients](@ref), a [`BasisSet`](@ref) stores and accepts
+    nuclear coordinates in Angstrom, but every Hessian here is with respect
+    to bohr displacement of each nucleus. So `∇2overlap(bset, iA, iB)` gives
+    `∂²S/∂R_iA∂R_iB` per bohr², *not* per Angstrom². To convert to a
+    per-Angstrom² derivative, divide by `Molecules.bohr_to_angstrom^2`
+    (≈0.529177 Å/bohr, squared).
+
 For nuclear attraction specifically, the second derivative has a shell
 piece (both derivatives on shell centers) and a nuclear-charge piece (one
 or both derivatives on a moving nuclear charge); `∇2nuclear` handles both
@@ -31,6 +39,7 @@ repositionable point-charge kernel per nucleus -- see
 ∇2kinetic(::BasisSet, ::Any, ::Any)
 ∇2nuclear(::BasisSet, ::Any, ::Any)
 ∇2ERI_2e4c(::BasisSet, ::Int, ::Int, ::Int, ::Int, ::Int, ::Int)
+∇2ERI_2e4c!(::Any, ::BasisSet, ::NTuple{4,Bool}, ::NTuple{4,Bool}, ::Int, ::Int, ::Int, ::Int, ::Vector{Float64}, ::Vector{Float64}, ::Vector{Float64}, ::Vector{Int32})
 ∇2ERI_2e3c(::BasisSet, ::BasisSet, ::Any, ::Any)
 ∇2ERI_2e2c(::BasisSet, ::Any, ::Any)
 ```

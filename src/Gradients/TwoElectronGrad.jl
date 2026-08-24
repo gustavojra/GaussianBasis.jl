@@ -2,13 +2,14 @@
     ∇ERI_2e4c(BS::BasisSet, iA) -> Array{Float64,5}
 
 Gradient of the full two-electron four-center integral tensor `(ij|kl)`
-w.r.t. atom `iA`'s three Cartesian coordinates. Returns a dense
-`nbas × nbas × nbas × nbas × 3` array respecting the same 8-fold
-permutational symmetry as `ERI_2e4c`. This is the full, uncompressed
-tensor -- for large basis sets prefer `∇sparseERI_2e4c`, which screens and
-stores only the unique elements. For a single shell quartet, see
-[`∇ERI_2e4c(BS,iA,i,j,k,l)`](@ref ∇ERI_2e4c(::BasisSet, ::Int, ::Int,
-::Int, ::Int, ::Int)). For repeated calls, see `∇ERI_2e4c!`.
+w.r.t. atom `iA`'s three Cartesian coordinates, with `R_iA` in bohr (see
+[Gradients](@ref) for units). Returns a dense `nbas × nbas × nbas × nbas ×
+3` array respecting the same 8-fold permutational symmetry as `ERI_2e4c`.
+This is the full, uncompressed tensor -- for large basis sets prefer
+`∇sparseERI_2e4c`, which screens and stores only the unique elements. For a
+single shell quartet, see [`∇ERI_2e4c(BS,iA,i,j,k,l)`](@ref
+∇ERI_2e4c(::BasisSet, ::Int, ::Int, ::Int, ::Int, ::Int)). For repeated
+calls, see `∇ERI_2e4c!`.
 """
 function ∇ERI_2e4c(BS::BasisSet, iA)
     # Pre allocate output
@@ -28,7 +29,7 @@ function ∇ERI_2e4c!(out, BS::BasisSet, iA)
     Ashells = Int[]
     notAshells = Int[]
     for i in 1:BS.nshells
-        b = BS.basis[i]
+        b = BS.shells[i]
         if b.atom == A
             push!(Ashells, i)
         else
@@ -36,7 +37,7 @@ function ∇ERI_2e4c!(out, BS::BasisSet, iA)
         end
     end
 
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
     Nmax = maximum(Nvals)
     #buf_arrays = [zeros(Cdouble, 3*Nmax^4) for _ = 1:Threads.nthreads()]
@@ -218,7 +219,7 @@ caller's responsibility for this form.
 """
 function ∇ERI_2e4c(BS::BasisSet, iA::Int, i::Int, j::Int, k::Int, l::Int)
     on_A = on_atom_flags(BS, iA, i, j, k, l)
-    Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
+    Ni, Nj, Nk, Nl = num_basis(BS.shells[i]), num_basis(BS.shells[j]), num_basis(BS.shells[k]), num_basis(BS.shells[l])
     out = zeros(Ni, Nj, Nk, Nl, 3)
     (!any(on_A) || all(on_A)) && return out
     return ∇ERI_2e4c!(out, BS, on_A, i, j, k, l)
@@ -234,13 +235,13 @@ function ∇ERI_2e4c!(out, BS::BasisSet, iA::Int, i::Int, j::Int, k::Int, l::Int
 end
 
 function ∇ERI_2e4c(BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
-    Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
+    Ni, Nj, Nk, Nl = num_basis(BS.shells[i]), num_basis(BS.shells[j]), num_basis(BS.shells[k]), num_basis(BS.shells[l])
     out = zeros(Ni, Nj, Nk, Nl, 3)
     return ∇ERI_2e4c!(out, BS, on_A, i, j, k, l)
 end
 
 function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
-    Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
+    Ni, Nj, Nk, Nl = num_basis(BS.shells[i]), num_basis(BS.shells[j]), num_basis(BS.shells[k]), num_basis(BS.shells[l])
     Nijkl = Ni*Nj*Nk*Nl
     buf = zeros(Cdouble, 3*Nijkl)
     tmp = zeros(Cdouble, 3*Nijkl)
@@ -267,7 +268,7 @@ function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k
     # allocating permutedims per non-first branch), several GB of GC churn
     # over a full gradient. permutedims! (in-place) replaces permutedims.
 
-    Ni, Nj, Nk, Nl = num_basis(BS.basis[i]), num_basis(BS.basis[j]), num_basis(BS.basis[k]), num_basis(BS.basis[l])
+    Ni, Nj, Nk, Nl = num_basis(BS.shells[i]), num_basis(BS.shells[j]), num_basis(BS.shells[k]), num_basis(BS.shells[l])
 
     if size(out) != (Ni, Nj, Nk, Nl, 3)
         throw(DimensionMismatch("Size of the output array needs to be ($Ni, $Nj, $Nk, $Nl, 3)."))
@@ -331,7 +332,7 @@ looping over atoms) should compute it once and pass it through via the
 `ij_vals`/`σvals` kwargs rather than recomputing it each time.
 """
 function schwarz_bounds(BS::BasisSet)
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     Nmax = maximum(Nvals)
     num_ij = Int((BS.nshells^2 - BS.nshells)/2) + BS.nshells
     ij_vals = Array{NTuple{2,Int32}}(undef, num_ij)
@@ -351,12 +352,13 @@ end
 """
     ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff=1e-12; ij_vals=nothing, σvals=nothing)
 
-Derivative (w.r.t. atom `iA`'s three Cartesian directions) of the unique
-(permutation-compressed) two-electron four-center integrals, Schwarz-
-screened the same way `sparseERI_2e4c` screens the energy integrals (see
-`schwarz_bounds`). `ij_vals`/`σvals` default to a fresh `schwarz_bounds(BS)`
-call if not supplied -- pass a precomputed pair in when calling this
-repeatedly across atoms to avoid recomputing it every time.
+Derivative (w.r.t. atom `iA`'s three Cartesian directions, in bohr -- see
+[Gradients](@ref) for units) of the unique (permutation-compressed)
+two-electron four-center integrals, Schwarz-screened the same way
+`sparseERI_2e4c` screens the energy integrals (see `schwarz_bounds`).
+`ij_vals`/`σvals` default to a fresh `schwarz_bounds(BS)` call if not
+supplied -- pass a precomputed pair in when calling this repeatedly across
+atoms to avoid recomputing it every time.
 """
 function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, σvals = nothing)
     # The energy-integral Schwarz bound is a valid screening proxy for the
@@ -382,11 +384,11 @@ function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, 
     # Shell indexes for basis in the atom A
     in_A = falses(BS.nshells)
     for i in 1:BS.nshells
-        BS.basis[i].atom == A && (in_A[i] = true)
+        BS.shells[i].atom == A && (in_A[i] = true)
     end
 
     # Pre compute a list of number of basis for each shell (2l +1)
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
     Nmax = maximum(Nvals)
 
@@ -530,9 +532,10 @@ end
 
 Gradient of the full two-electron three-center integral tensor `(μν|P)`
 (`BS1`=regular basis, `BS2`=auxiliary/fitting basis) w.r.t. atom `iA`'s
-three Cartesian coordinates. `iA` indexes into `BS1.atoms`. Returns a dense
-`BS1.nbas × BS1.nbas × BS2.nbas × 3` array, symmetric under `μ↔ν` swap. For
-repeated calls, see `∇ERI_2e3c!`.
+three Cartesian coordinates, with `R_iA` in bohr (see [Gradients](@ref) for
+units). `iA` indexes into `BS1.atoms`. Returns a dense `BS1.nbas ×
+BS1.nbas × BS2.nbas × 3` array, symmetric under `μ↔ν` swap. For repeated
+calls, see `∇ERI_2e3c!`.
 """
 function ∇ERI_2e3c(BS1::BasisSet, BS2::BasisSet, iA)
     # Pre allocate output
@@ -548,7 +551,7 @@ function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA; Bmerged::Union{Noth
     # construction on every call.
     if Bmerged === nothing
         atoms = unique(vcat(BS1.atoms, BS2.atoms))
-        basis = vcat(BS1.basis, BS2.basis)
+        basis = vcat(BS1.shells, BS2.shells)
         Bmerged = BasisSet("$(BS1.name*BS2.name)", atoms, basis)
     end
 
@@ -562,7 +565,7 @@ function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA; Bmerged::Union{Noth
     Ashells1 = Int[]
     notAshells1 = Int[]
     for i in 1:BS1.nshells
-        b = BS1.basis[i]
+        b = BS1.shells[i]
         if b.atom == A
             push!(Ashells1, i)
         else
@@ -574,7 +577,7 @@ function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA; Bmerged::Union{Noth
     Ashells2 = Int[]
     notAshells2 = Int[]
     for i in 1:BS2.nshells
-        b = BS2.basis[i]
+        b = BS2.shells[i]
         if b.atom == A
             push!(Ashells2, i)
         else
@@ -582,11 +585,11 @@ function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA; Bmerged::Union{Noth
         end
     end
 
-    Nvals1 = num_basis.(BS1.basis)
+    Nvals1 = num_basis.(BS1.shells)
     ao_offset1 = [sum(Nvals1[1:(i-1)]) for i = 1:BS1.nshells]
     Nmax1 = maximum(Nvals1)
 
-    Nvals2 = num_basis.(BS2.basis)
+    Nvals2 = num_basis.(BS2.shells)
     ao_offset2 = [sum(Nvals2[1:(i-1)]) for i = 1:BS2.nshells]
     Nmax2 = maximum(Nvals2)
 
@@ -665,8 +668,9 @@ end
 
 Gradient of the full two-electron two-center integral matrix `(P|Q)` (the
 density-fitting Coulomb metric `J_PQ`) w.r.t. atom `iA`'s three Cartesian
-coordinates. Returns a dense `nbas × nbas × 3` array, symmetric under
-`P↔Q` swap. For repeated calls, see `∇ERI_2e2c!`.
+coordinates, with `R_iA` in bohr (see [Gradients](@ref) for units). Returns
+a dense `nbas × nbas × 3` array, symmetric under `P↔Q` swap. For repeated
+calls, see `∇ERI_2e2c!`.
 """
 function ∇ERI_2e2c(BS::BasisSet, iA)
     # Pre allocate output
@@ -686,7 +690,7 @@ function ∇ERI_2e2c!(out, BS::BasisSet, iA)
     Ashells = Int[]
     notAshells = Int[]
     for i in 1:BS.nshells
-        b = BS.basis[i]
+        b = BS.shells[i]
         if b.atom == A
             push!(Ashells, i)
         else
@@ -694,7 +698,7 @@ function ∇ERI_2e2c!(out, BS::BasisSet, iA)
         end
     end
 
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
     Nmax = maximum(Nvals)
 

@@ -16,11 +16,11 @@ but shouldn't rely on any particular one either.
 """
 function sparseERI_2e4c(BS::BasisSet, cutoff = 1e-12)
     # Pre compute a list of angular momentum numbers (l) for each shell
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     Nmax = maximum(Nvals)
 
     # Offset list for each shell, used to map shell index to AO index
-    ao_offset = [sum(Nvals[1:(i-1)]) - 1 for i = 1:BS.nshells]
+    ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
 
     # Unique shell pairs with i < j
     num_ij = (BS.nshells^2 - BS.nshells) ÷ 2 + BS.nshells
@@ -159,19 +159,9 @@ function sparseERI_2e4c(BS::BasisSet, cutoff = 1e-12)
     return indexes, out
 end
 
-"""
-    ERI_2e4c(BS::BasisSet, i, j, k, l) -> Array{Float64,4}
-
-Compute the two-electron four-center integral block `(ij|kl)` (chemist's
-notation) for shells `i,j,k,l` of `BS` (shell indices, not AO indices).
-Returned as an `(Ni,Nj,Nk,Nl)` array. For the full dense tensor, see
-[`ERI_2e4c(BS)`](@ref ERI_2e4c(::BasisSet)); for the permutation-compressed,
-screened form, see `sparseERI_2e4c`. For repeated calls (e.g. in a hot
-loop), see `ERI_2e4c!` to avoid reallocating.
-"""
 function ERI_2e4c(BS::BasisSet, i, j, k, l)
-    out = zeros(eltype(BS.atoms[1].xyz), num_basis(BS.basis[i]), num_basis(BS.basis[j]),
-                num_basis(BS.basis[k]), num_basis(BS.basis[l]))
+    out = zeros(eltype(BS.atoms[1].xyz), num_basis(BS.shells[i]), num_basis(BS.shells[j]),
+                num_basis(BS.shells[k]), num_basis(BS.shells[l]))
     ERI_2e4c!(out, BS, i, j, k, l)
     return out
 end
@@ -179,6 +169,22 @@ end
 # Mutating, shell-quartet-level form of ERI_2e4c(BS, i, j, k, l): writes into
 # a caller-supplied `out` (sized (Ni,Nj,Nk,Nl)) instead of allocating.
 # Dispatches on the integral backend (LCint vs. the ACSint fallback below).
+"""
+    ERI_2e4c!(out, BS::BasisSet, i, j, k, l)
+    ERI_2e4c!(out, BS::BasisSet)
+
+Mutating counterpart of [`ERI_2e4c`](@ref): writes into the caller-supplied
+`out` instead of allocating. This shell-quartet form is the primitive the
+full-tensor form builds on.
+
+# Methods
+
+  - `ERI_2e4c!(out, BS, i, j, k, l)`: `out` must be `(Ni,Nj,Nk,Nl)`, the
+    `(ij|kl)` block (chemist's notation) for shells `i,j,k,l` of `BS` (shell
+    indices, not AO indices).
+  - `ERI_2e4c!(out, BS)`: `out` must be a dense
+    `nbas × nbas × nbas × nbas` array.
+"""
 function ERI_2e4c!(out, BS::BasisSet{LCint}, i, j, k, l)
     cint2e_sph!(out, @SVector([i,j,k,l]), BS.lib)
 end
@@ -189,13 +195,22 @@ end
 
 """
     ERI_2e4c(BS::BasisSet) -> Array{Float64,4}
+    ERI_2e4c(BS::BasisSet, i, j, k, l) -> Array{Float64,4}
 
-Compute the full two-electron four-center integral tensor `(ij|kl)`
-(chemist's notation) for `BS`. Returns a dense `nbas × nbas × nbas × nbas`
-array respecting the standard 8-fold permutational symmetry
-(`(ij|kl)=(ji|kl)=(ij|lk)=(kl|ij)=...`). This is the full, uncompressed
-tensor -- for large basis sets prefer `sparseERI_2e4c`, which screens and
-stores only the unique elements. For repeated calls, see `ERI_2e4c!`.
+Compute the two-electron four-center integral tensor `(ij|kl)` (chemist's
+notation), respecting the standard 8-fold permutational symmetry
+(`(ij|kl)=(ji|kl)=(ij|lk)=(kl|ij)=...`).
+
+# Methods
+
+  - `ERI_2e4c(BS)`: full, dense `nbas × nbas × nbas × nbas` tensor for `BS`.
+    For large basis sets prefer `sparseERI_2e4c`, which screens and stores
+    only the unique elements.
+  - `ERI_2e4c(BS, i, j, k, l)`: just the `(Ni,Nj,Nk,Nl)` block for shells
+    `i,j,k,l` of `BS` (shell indices, not AO indices).
+
+For repeated calls (e.g. in a hot loop), see `ERI_2e4c!`, which writes into
+a preallocated array instead of allocating.
 """
 function ERI_2e4c(BS::BasisSet)
     N = BS.nbas
@@ -205,7 +220,7 @@ end
 
 function ERI_2e4c!(out, BS::BasisSet)
     # Save a list containing the number of basis for each shell
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     Nmax = maximum(Nvals)
 
     # Get slice corresponding to the address in S where the compute chunk goes

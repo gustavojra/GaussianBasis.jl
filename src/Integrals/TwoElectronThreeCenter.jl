@@ -5,12 +5,31 @@ const _ghostBF = CartesianShell(0, [1.0], [0.0], Atom(1, 1.0, [0.0, 0.0, 0.0]))
 # backend: LCint uses libcint's native 3-center kernel directly; the ACSint
 # fallback below instead evaluates it as a 4-center integral against a ghost
 # (zero-charge, s-type) basis function standing in for the missing 4th center.
+"""
+    ERI_2e3c!(out, BS::BasisSet, i, j, k)
+    ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet)
+
+Mutating counterpart of [`ERI_2e3c`](@ref): writes into the caller-supplied
+`out` instead of allocating.
+
+# Methods
+
+  - `ERI_2e3c!(out, BS, i, j, k)`: `out` must be `(Ni,Nj,Nk)`, the `(ij|k)`
+    block for shells `i,j,k` of `BS` (shell indices, not AO indices). This
+    is the shell-triple primitive the full-tensor form builds on -- but it
+    takes a single `BasisSet` with the regular and auxiliary shells already
+    merged together, since libcint's 3-center kernel resolves shell indices
+    against one basis. See [Three Centers](@ref) for how to build one and
+    map shell indices into it.
+  - `ERI_2e3c!(out, BS1, BS2)`: `out` must be a dense
+    `BS1.nbas × BS1.nbas × BS2.nbas` array.
+"""
 function ERI_2e3c!(out, BS::BasisSet{LCint}, i, j, k)
     cint3c2e_sph!(out, [i,j,k], BS.lib)
 end
 
 function ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, i, j, k)
-    generate_ERI_quartet!(out, BS1.basis[i], BS1.basis[j], BS2.basis[k], _ghostBF)
+    generate_ERI_quartet!(out, BS1.shells[i], BS1.shells[j], BS2.shells[k], _ghostBF)
 end
 
 """
@@ -21,7 +40,8 @@ Compute the full two-electron three-center integral tensor `(μν|P)`, with
 `BS2`'s (the auxiliary/fitting basis) -- the building block for density
 fitting / resolution-of-the-identity approximations. Returns a dense
 `BS1.nbas × BS1.nbas × BS2.nbas` array, symmetric under `μ↔ν` swap. For
-repeated calls, see `ERI_2e3c!`.
+repeated calls, see `ERI_2e3c!`, which writes into a preallocated array
+instead of allocating.
 """
 function ERI_2e3c(BS1::BasisSet, BS2::BasisSet)
     out = zeros(BS1.nbas, BS1.nbas, BS2.nbas)
@@ -31,8 +51,8 @@ end
 function ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet)
 
     # Pre compute number of basis per shell
-    Nvals1 = num_basis.(BS1.basis)
-    Nvals2 = num_basis.(BS2.basis)
+    Nvals1 = num_basis.(BS1.shells)
+    Nvals2 = num_basis.(BS2.shells)
     Nmax1 = maximum(Nvals1)
     Nmax2 = maximum(Nvals2)
 
@@ -78,13 +98,13 @@ end
 function ERI_2e3c!(out, BS1::BasisSet{LCint}, BS2::BasisSet{LCint})
 
     atoms = unique(vcat(BS1.atoms, BS2.atoms))
-    basis = vcat(BS1.basis, BS2.basis)
+    basis = vcat(BS1.shells, BS2.shells)
 
     Bmerged = BasisSet("$(BS1.name*BS2.name)", atoms, basis)
 
     # Pre compute number of basis per shell
-    Nvals1 = num_basis.(BS1.basis)
-    Nvals2 = num_basis.(BS2.basis)
+    Nvals1 = num_basis.(BS1.shells)
+    Nvals2 = num_basis.(BS2.shells)
     Nmax1 = maximum(Nvals1)
     Nmax2 = maximum(Nvals2)
 

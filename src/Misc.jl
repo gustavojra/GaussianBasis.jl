@@ -11,9 +11,14 @@ function string_repr(B::SphericalShell)
     mvals = collect(-B.l:B.l)
     nprim = length(B.exp)
 
+    atom_name = Molecules.elements[B.atom.Z].name
+    plural_nbas = nbas == 1 ? "" : "s"
+    plural_nprim = nprim == 1 ? "" : "s"
+
     # Reverse Dict(symbol=>num) to get Symbols from B.l
     Lsymbol = Dict(value => key for (key, value) in AMDict)[B.l]
-    out = "$(Lsymbol) shell with $nbas basis built from $nprim primitive gaussians\n\n"
+    out = "$(Lsymbol) shell on $atom_name at position $(B.atom.xyz) Å\n"
+    out *= "Contains $nbas basis function$plural_nbas built from $nprim primitive gaussian$plural_nprim\n\n"
     for m in mvals
         # Add sub minus sign (0x208B) if necessary
         m_sub = m < 0 ? Char(0x208B)*Char(0x2080 - m) : Char(0x2080 + m)
@@ -35,6 +40,43 @@ function string_repr(B::SphericalShell)
         end
         out *="\n\n"
     end
+    return strip(out)
+end
+
+function compact_string_repr(B::SphericalShell)
+    # Generate Unicode symbol for sub number
+    l_sub = Char(0x2080 + B.l)
+
+    # Unicode for superscript is a bit messier, so gotta use control flow
+    l_sup = B.l == 1 ? Char(0x00B9) :
+            B.l in [2,3] ? Char(0x00B0 + B.l) :
+            Char(0x2070 + B.l)
+
+    nbas = 2*B.l + 1
+    mvals = collect(-B.l:B.l)
+    nprim = length(B.exp)
+
+    atom_name = Molecules.elements[B.atom.Z].name
+    plural_nbas = nbas == 1 ? "" : "s"
+    plural_nprim = nprim == 1 ? "" : "s"
+
+    # Reverse Dict(symbol=>num) to get Symbols from B.l
+    Lsymbol = Dict(value => key for (key, value) in AMDict)[B.l]
+    out = "$(Lsymbol) shell on $atom_name ($nbas basis function$plural_nbas, $nprim primitive$plural_nprim)"
+    return strip(out)
+end
+
+function compact_string_repr(B::CartesianShell)
+    nbas = ((B.l + 1) * (B.l + 2)) ÷ 2
+    nprim = length(B.exp)
+
+    atom_name = Molecules.elements[B.atom.Z].name
+    plural_nbas = nbas == 1 ? "" : "s"
+    plural_nprim = nprim == 1 ? "" : "s"
+
+    # Reverse Dict(symbol=>num) to get Symbols from B.l
+    Lsymbol = Dict(value => key for (key, value) in AMDict)[B.l]
+    out = "$(Lsymbol) shell on $atom_name ($nbas basis function$plural_nbas, $nprim primitive$plural_nprim)"
     return strip(out)
 end
 
@@ -66,9 +108,14 @@ function string_repr(B::CartesianShell)
     end
     nprim = length(B.exp)
 
+    atom_name = Molecules.elements[B.atom.Z].name
+    plural_nbas = nbas == 1 ? "" : "s"
+    plural_nprim = nprim == 1 ? "" : "s"
+
     # Reverse Dict(symbol=>num) to get Symbols from B.l
     Lsymbol = Dict(value => key for (key, value) in AMDict)[B.l]
-    out = "$(Lsymbol) shell with $nbas basis built from $nprim primitive gaussians\n\n"
+    out = "$(Lsymbol) shell on $atom_name at position $(B.atom.xyz) Å\n"
+    out *= "Contains $nbas basis function$plural_nbas built from $nprim primitive gaussian$plural_nprim\n\n"
     for m in mvals
         χ = "χ"
         if !isempty(m)
@@ -94,8 +141,8 @@ end
 
 function string_repr(B::BasisSet{T,Y,P}) where {T,Y,P}
     out  =  "$(B.name) Basis Set\n"
-    out *= "Type: "*replace("$(P)", "Shell"=>"")
-    out *= "   Backend: " 
+    out *= "Type: "*(P <: SphericalShell ? "Spherical" : "Cartesian")
+    out *= "   Backend: "
     if T === GaussianBasis.LCint
         out *= "Libcint\n\n"
     else
@@ -119,7 +166,7 @@ function string_repr(B::BasisSet{T,Y,P}) where {T,Y,P}
         # Count how many times s,p,d appears for numbering
         count = zeros(Int16, 7)
         out *= "$(symbol(A)): "
-        for b in B.basis
+        for b in B.shells
             if b.atom == A
                 L = l_to_symbol[b.l]
                 count[b.l+1] += 1
@@ -133,8 +180,12 @@ function string_repr(B::BasisSet{T,Y,P}) where {T,Y,P}
 end
 
 # Pretty printing
-function show(io::IO, ::MIME"text/plain", X::T) where T<:Union{BasisFunction, BasisSet}
+function show(io::IO, ::MIME"text/plain", X::T) where T<:Union{ShellFunction, BasisSet}
     print(io, string_repr(X))
+end
+
+function show(io::IO, X::T) where T<:ShellFunction
+    print(io, compact_string_repr(X))
 end
 
 # adapted from https://juliafolds.github.io/data-parallelism/tutorials/concurrency-patterns/
@@ -160,18 +211,11 @@ end
     on_atom_flags(BS::BasisSet, iA::Int, shells...)
 
 Whether each of `shells` (any number of shell indices) sits on atom `iA`, as
-an `NTuple{N,Bool}`. Uses `===` rather than `==` to compare `Atom` structs --
-`Atom` is `isbits` and shells share literal object identity with
-`BS.atoms[iA]` (`BS.basis[s].atom === BS.atoms[iA]` holds whenever shell `s`
-belongs to atom `iA`), so `===` compiles to a direct bitwise compare instead
-of dispatching through `==` on each of `Atom`'s fields (including an
-`SVector` of `Float64`s) -- measured about 2x faster over many repeated
-comparisons, and this is called on the order of `nshells^4` times in the
-gradient/Hessian screening loops, so the difference is not noise.
+an `NTuple{N,Bool}`.
 """
 function on_atom_flags(BS::BasisSet, iA::Int, shells...)
     A = BS.atoms[iA]
-    return ntuple(p -> BS.basis[shells[p]].atom === A, length(shells))
+    return ntuple(p -> BS.shells[shells[p]].atom === A, length(shells))
 end
 
 
@@ -227,7 +271,7 @@ function atomic_orbital_angular_part(shell::SphericalShell, n::Integer, d, d²)
 end
 
 
-function atomic_orbital_amplitude(shell::BasisFunction, n::Integer, r::AbstractArray)
+function atomic_orbital_amplitude(shell::ShellFunction, n::Integer, r::AbstractArray)
     T = promote_type(eltype(shell.coef), eltype(shell.exp), eltype(r), eltype(shell.atom.xyz))
 
     if size(r,1) != 3
@@ -248,21 +292,16 @@ function atomic_orbital_amplitude(shell::BasisFunction, n::Integer, r::AbstractA
     return v
 end
 
+# Returns the shell and the index of the basis function within that shell for a given basis function index in the basis set.
+# i.e., think for sto-3g water [O, H, H], find_shell_m(bset, 4) returns the O p shell and the index 2.
 function find_shell_m(B::BasisSet, idx::Integer)
     if idx <= 0
         throw(BoundsError(B, idx))
     end
 
     n = idx
-    for shell in B.basis
+    for shell in B.shells
         if n - (2shell.l +1) <= 0
-            m = n - shell.l - 1
-
-            # for p shell, ordering is px, py, pz <=> m = 1,-1,0
-            if shell.l == 1
-                m = (1, -1, 0)[n]
-            end
-
             return shell, n
         end
         n -= 2shell.l + 1
@@ -272,8 +311,8 @@ function find_shell_m(B::BasisSet, idx::Integer)
 end
 
 """
-    atomic_orbital_value(B::BasisSet, i::Integer, r::AbstractVector) -> Real
-    atomic_orbital_value(B::BasisSet, i::Integer, r::AbstractArray) -> AbstractArray
+    atomic_orbital_amplitude(B::BasisSet, i::Integer, r::AbstractVector) -> Real
+    atomic_orbital_amplitude(B::BasisSet, i::Integer, r::AbstractArray) -> AbstractArray
 
 Returns the amplitude of the `i`th basis function at a set of real space positions. `r` can be either a 3-vector containing a single position or a 3 × … array of positions for evaluating many points at once more efficiently.
 
@@ -292,6 +331,7 @@ julia> atomic_orbital_amplitude(bset, 1, [0.1;0.2;0.3;;-0.1;0.3;-0.2])
 function atomic_orbital_amplitude(B::BasisSet, idx::Integer, r::AbstractArray)
     return atomic_orbital_amplitude(find_shell_m(B, idx)..., r)
 end
+# This dispatch supports a vector instead of matrix, it calls the method above.
 function atomic_orbital_amplitude(B::BasisSet, idx::Integer, r::AbstractVector)
     return atomic_orbital_amplitude(B, idx, reshape(r,:,1))[1]
 end

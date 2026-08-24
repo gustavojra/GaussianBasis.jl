@@ -11,7 +11,7 @@ struct LCint <: IntLib
     env::Vector{Cdouble}
 end
 
-function LCint(atoms::Vector{At}, basis::Vector{Bs}) where {At<:Atom,Bs<:BasisFunction}
+function LCint(atoms::Vector{At}, basis::Vector{Bs}) where {At<:Atom,Bs<:ShellFunction}
     ATM_SLOTS = 6
     BAS_SLOTS = 8
 
@@ -114,7 +114,7 @@ end
 #
 #    for i = eachindex(BS1.atoms)
 #        # Prepare the lc_bas input
-#        for j = eachindex(BS1.basis[i])
+#        for j = eachindex(BS1.shells[i])
 #            B = BS1[i][j] 
 #            Ne = length(B.exp)
 #            Nc = length(B.coef)
@@ -144,7 +144,7 @@ end
 #
 #    for i = eachindex(BS2.atoms)
 #        # Prepare the lc_bas input
-#        for j = eachindex(BS2.basis[i])
+#        for j = eachindex(BS2.shells[i])
 #            B = BS2[i][j] 
 #            Ne = length(B.exp)
 #            Nc = length(B.coef)
