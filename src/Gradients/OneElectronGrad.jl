@@ -448,7 +448,7 @@ function ∇nuclear!(out, BS::BasisSet, A)
     end
 
     Nvals = num_basis.(BS.shells)
-    ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
+    ao_offset = cumsum(Nvals) .- Nvals
     Nmax = maximum(Nvals)
     # i ∉ A & j ∉ A
     allocate(body) = body(zeros(Cdouble, 3*Nmax^2))
@@ -589,7 +589,7 @@ function ∇1e!(callback, out, BS::BasisSet, A)
     end
 
     Nvals = num_basis.(BS.shells)
-    ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
+    ao_offset = cumsum(Nvals) .- Nvals
     Nmax = maximum(Nvals)
 
     allocate(body) = body(zeros(Cdouble, 3*Nmax^2))

@@ -181,12 +181,21 @@ overlap!(out, BS::BasisSet) = get_1e_matrix!(overlap!, out, BS)
 kinetic!(out, BS::BasisSet) = get_1e_matrix!(kinetic!, out, BS)
 nuclear!(out, BS::BasisSet) = get_1e_matrix!(nuclear!, out, BS)
 
-function get_1e_matrix(callback, BS::BasisSet, rank::Integer = 0)
-    out = zeros(eltype(BS.atoms[1].xyz), BS.nbas, BS.nbas, Iterators.repeated(3, rank)...)
-    return get_1e_matrix!(callback, out, BS, rank)
+function get_1e_matrix(callback, BS::BasisSet)
+    out = zeros(eltype(BS.atoms[1].xyz), BS.nbas, BS.nbas)
+    return get_1e_matrix!(callback, out, BS)
 end
 
-function get_1e_matrix!(callback, out, BS::BasisSet, rank::Integer = 0)
+# Specialized for rank-0 (overlap/kinetic/nuclear) integrals only -- each
+# shell pair's (Ni,Nj) block is copied into `out` (and its (j,i) mirror,
+# exploiting S_ji = S_ij^T) via a plain scalar double loop instead of
+# range-indexed dot-broadcast (`out[I,J] .+= kvals`): the latter allocates
+# a SubArray/Broadcasted wrapper per shell pair that Julia's escape
+# analysis doesn't elide, ~90 bytes/pair, growing linearly with the number
+# of shell pairs; the scalar loop is allocation-free. See
+# `get_multipole_matrix!` in Multipole.jl for the rank>0 (dipole etc.)
+# analogue.
+function get_1e_matrix!(callback, out, BS::BasisSet)
 
     # Zero out the output array
     fill!(out, 0.0)
@@ -195,31 +204,28 @@ function get_1e_matrix!(callback, out, BS::BasisSet, rank::Integer = 0)
     Nmax = maximum(Nvals)
 
     # Offset list for each shell, used to map shell index to AO index
-    ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
+    ao_offset = cumsum(Nvals) .- Nvals
 
-    ijs = Iterators.flatten((((i,j) for i = 1:j) for j = 1:BS.nshells))
+    ijs = unique_ij(BS.nshells)
 
-    allocate(body) = body(zeros(Cdouble, 3^rank * Nmax^2))
+    allocate(body) = body(zeros(Cdouble, Nmax^2))
     workerpool(allocate, ijs; chunksize=10) do (i,j), buf
+        @inbounds begin
             Ni = Nvals[i]
             Nj = Nvals[j]
-            Nij = Ni*Nj
             ioff = ao_offset[i]
             joff = ao_offset[j]
 
             callback(buf, BS, i, j)
-            I = (ioff+1):(ioff+Ni)
-            J = (joff+1):(joff+Nj)
 
-            # Get strides for each cartesian product
-            for (n, ks) in enumerate(Iterators.product(Iterators.repeated(1:3, rank)...))
-                r = Nij*(n-1)+1:n*Nij
-                kvals = reshape(view(buf, r), Ni, Nj)
-                out[I,J,ks...] .+= kvals
+            for js = 1:Nj, is = 1:Ni
+                v = buf[is + Ni*(js-1)]
+                out[ioff+is, joff+js] = v
                 if i != j
-                    out[J,I,ks...] .+= kvals'
+                    out[joff+js, ioff+is] = v
                 end
             end
+        end
     end
     return out
 end
@@ -289,8 +295,8 @@ function get_1e_matrix!(callback, out, BS1::BasisSet, BS2::BasisSet)
     Nmax2 = maximum(Nvals2)
 
     # Offset list for each shell, used to map shell index to AO index
-    ao_offset1 = [sum(Nvals1[1:(i-1)]) for i = 1:BS1.nshells]
-    ao_offset2 = [sum(Nvals2[1:(i-1)]) for i = 1:BS2.nshells]
+    ao_offset1 = cumsum(Nvals1) .- Nvals1
+    ao_offset2 = cumsum(Nvals2) .- Nvals2
 
     allocate(body) = body(zeros(Cdouble, Nmax1*Nmax2))
     workerpool(allocate, 1:BS1.nshells; chunksize = 1) do i, buf
@@ -333,8 +339,8 @@ function get_1e_matrix!(callback, out, BS1::BasisSet{LCint}, BS2::BasisSet{LCint
     Nmax2 = maximum(Nvals2)
 
     # Offset list for each shell, used to map shell index to AO index
-    ao_offset1 = [sum(Nvals1[1:(i-1)]) for i = 1:BS1.nshells]
-    ao_offset2 = [sum(Nvals2[1:(i-1)]) for i = 1:BS2.nshells]
+    ao_offset1 = cumsum(Nvals1) .- Nvals1
+    ao_offset2 = cumsum(Nvals2) .- Nvals2
 
     allocate(body) = body(zeros(Cdouble, Nmax1*Nmax2))
     workerpool(allocate, 1:BS1.nshells; chunksize = 1) do i, buf

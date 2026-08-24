@@ -57,8 +57,8 @@ function ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet)
     Nmax2 = maximum(Nvals2)
 
     # Offset list for each shell, used to map shell index to AO index
-    ao_offset1 = [sum(Nvals1[1:(i-1)]) for i = 1:BS1.nshells]
-    ao_offset2 = [sum(Nvals2[1:(i-1)]) for i = 1:BS2.nshells]
+    ao_offset1 = cumsum(Nvals1) .- Nvals1
+    ao_offset2 = cumsum(Nvals2) .- Nvals2
 
     allocate(body) = body(zeros(Cdouble, Nmax1^2*Nmax2))
     workerpool(allocate, 1:BS2.nshells; chunksize=1) do k, buf
@@ -109,8 +109,8 @@ function ERI_2e3c!(out, BS1::BasisSet{LCint}, BS2::BasisSet{LCint})
     Nmax2 = maximum(Nvals2)
 
     # Offset list for each shell, used to map shell index to AO index
-    ao_offset1 = [sum(Nvals1[1:(i-1)]) for i = 1:BS1.nshells]
-    ao_offset2 = [sum(Nvals2[1:(i-1)]) for i = 1:BS2.nshells]
+    ao_offset1 = cumsum(Nvals1) .- Nvals1
+    ao_offset2 = cumsum(Nvals2) .- Nvals2
 
 
     allocate(body) = body(zeros(Cdouble, Nmax1^2*Nmax2))

@@ -114,7 +114,7 @@ a molecular dipole moment.
 For repeated calls, see `dipole!`, which writes into a preallocated array
 instead of allocating.
 """
-dipole(BS::BasisSet) = get_1e_matrix(dipole!, BS, 1)
+dipole(BS::BasisSet) = get_multipole_matrix(dipole!, BS, Val(1))
 
 """
     quadrupole(BS::BasisSet) -> Array{Float64,4}
@@ -133,7 +133,7 @@ the origin; see [`dipole`](@ref) for the general convention.
 For repeated calls, see `quadrupole!`, which writes into a preallocated
 array instead of allocating.
 """
-quadrupole(BS::BasisSet) = get_1e_matrix(quadrupole!, BS, 2)
+quadrupole(BS::BasisSet) = get_multipole_matrix(quadrupole!, BS, Val(2))
 
 """
     octupole(BS::BasisSet) -> Array{Float64,5}
@@ -152,7 +152,7 @@ origin; see [`dipole`](@ref) for the general convention.
 For repeated calls, see `octupole!`, which writes into a preallocated array
 instead of allocating.
 """
-octupole(BS::BasisSet) = get_1e_matrix(octupole!, BS, 3)
+octupole(BS::BasisSet) = get_multipole_matrix(octupole!, BS, Val(3))
 
 """
     hexadecapole(BS::BasisSet) -> Array{Float64,6}
@@ -171,9 +171,66 @@ the origin; see [`dipole`](@ref) for the general convention.
 For repeated calls, see `hexadecapole!`, which writes into a preallocated
 array instead of allocating.
 """
-hexadecapole(BS::BasisSet) = get_1e_matrix(hexadecapole!, BS, 4)
+hexadecapole(BS::BasisSet) = get_multipole_matrix(hexadecapole!, BS, Val(4))
 
-dipole!(out, BS::BasisSet) = get_1e_matrix!(dipole!, out, BS, 1)
-quadrupole!(out, BS::BasisSet) = get_1e_matrix!(quadrupole!, out, BS, 2)
-octupole!(out, BS::BasisSet) = get_1e_matrix!(octupole!, out, BS, 3)
-hexadecapole!(out, BS::BasisSet) = get_1e_matrix!(hexadecapole!, out, BS, 4)
+dipole!(out, BS::BasisSet) = get_multipole_matrix!(dipole!, out, BS, Val(1))
+quadrupole!(out, BS::BasisSet) = get_multipole_matrix!(quadrupole!, out, BS, Val(2))
+octupole!(out, BS::BasisSet) = get_multipole_matrix!(octupole!, out, BS, Val(3))
+hexadecapole!(out, BS::BasisSet) = get_multipole_matrix!(hexadecapole!, out, BS, Val(4))
+
+function get_multipole_matrix(callback, BS::BasisSet, ::Val{N}) where N
+    out = zeros(eltype(BS.atoms[1].xyz), BS.nbas, BS.nbas, ntuple(_ -> 3, Val(N))...)
+    return get_multipole_matrix!(callback, out, BS, Val(N))
+end
+
+# Rank>0 (dipole/quadrupole/octupole/hexadecapole) analogue of
+# `get_1e_matrix!` (OneElectron.jl): the number of trailing Cartesian axes
+# is `N`, carried as a `Val{N}` type parameter rather than a runtime
+# `Integer` -- with a runtime rank, `Iterators.product(Iterators.repeated(1:3,
+# rank)...)` splats a runtime-length argument list, which Julia can't give a
+# concrete return type (`ProductIterator{T} where T<:Tuple{Vararg{UnitRange}}`),
+# so the per-component loop was dynamically dispatched regardless of how the
+# shell-pair block was copied into `out` afterward. With `N` known at compile
+# time, `CartesianIndices(ntuple(_->3, Val(N)))` is fully concrete, and the
+# copy itself uses a plain scalar double loop (see `get_1e_matrix!`'s
+# docstring for why that beats range-indexed dot-broadcast).
+function get_multipole_matrix!(callback, out, BS::BasisSet, ::Val{N}) where N
+
+    fill!(out, 0.0)
+
+    Nvals = num_basis.(BS.shells)
+    Nmax = maximum(Nvals)
+
+    ao_offset = cumsum(Nvals) .- Nvals
+
+    ijs = unique_ij(BS.nshells)
+
+    dims = ntuple(_ -> 3, Val(N))
+    ncomp = 3^N
+
+    allocate(body) = body(zeros(Cdouble, ncomp * Nmax^2))
+    workerpool(allocate, ijs; chunksize=10) do (i,j), buf
+        @inbounds begin
+            Ni = Nvals[i]
+            Nj = Nvals[j]
+            Nij = Ni*Nj
+            ioff = ao_offset[i]
+            joff = ao_offset[j]
+
+            callback(buf, BS, i, j)
+
+            for (n, ks) in enumerate(CartesianIndices(dims))
+                base = Nij*(n-1)
+                kt = Tuple(ks)
+                for js = 1:Nj, is = 1:Ni
+                    v = buf[base + is + Ni*(js-1)]
+                    out[ioff+is, joff+js, kt...] = v
+                    if i != j
+                        out[joff+js, ioff+is, kt...] = v
+                    end
+                end
+            end
+        end
+    end
+    return out
+end

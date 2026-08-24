@@ -97,7 +97,7 @@ function ∇2nuclear!(out, BS::BasisSet, iA, iB)
     Bat = BS.atoms[iB]
 
     Nvals = num_basis.(BS.shells)
-    ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
+    ao_offset = cumsum(Nvals) .- Nvals
     Nmax = maximum(Nvals)
     buf = zeros(Cdouble, 9*Nmax^2)
     # Reused across every (nucleus, shell pair) below instead of allocating

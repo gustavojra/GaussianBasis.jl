@@ -38,7 +38,7 @@ function ∇ERI_2e4c!(out, BS::BasisSet, iA)
     end
 
     Nvals = num_basis.(BS.shells)
-    ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
+    ao_offset = cumsum(Nvals) .- Nvals
     Nmax = maximum(Nvals)
     #buf_arrays = [zeros(Cdouble, 3*Nmax^4) for _ = 1:Threads.nthreads()]
 
@@ -389,7 +389,7 @@ function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, 
 
     # Pre compute a list of number of basis for each shell (2l +1)
     Nvals = num_basis.(BS.shells)
-    ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
+    ao_offset = cumsum(Nvals) .- Nvals
     Nmax = maximum(Nvals)
 
     # Unique shell pairs with i ≤ j
@@ -586,11 +586,11 @@ function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA; Bmerged::Union{Noth
     end
 
     Nvals1 = num_basis.(BS1.shells)
-    ao_offset1 = [sum(Nvals1[1:(i-1)]) for i = 1:BS1.nshells]
+    ao_offset1 = cumsum(Nvals1) .- Nvals1
     Nmax1 = maximum(Nvals1)
 
     Nvals2 = num_basis.(BS2.shells)
-    ao_offset2 = [sum(Nvals2[1:(i-1)]) for i = 1:BS2.nshells]
+    ao_offset2 = cumsum(Nvals2) .- Nvals2
     Nmax2 = maximum(Nvals2)
 
     buf = zeros(Cdouble, 3*Nmax1^2*Nmax2)
@@ -699,7 +699,7 @@ function ∇ERI_2e2c!(out, BS::BasisSet, iA)
     end
 
     Nvals = num_basis.(BS.shells)
-    ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
+    ao_offset = cumsum(Nvals) .- Nvals
     Nmax = maximum(Nvals)
 
     buf = zeros(Cdouble, 3*Nmax^2)

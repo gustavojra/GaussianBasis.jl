@@ -126,10 +126,10 @@ function ∇2ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA, iB; Bmerged::Union
     Bat = BS1.atoms[iB]
 
     Nvals1 = num_basis.(BS1.shells)
-    ao_offset1 = [sum(Nvals1[1:(i-1)]) for i = 1:BS1.nshells]
+    ao_offset1 = cumsum(Nvals1) .- Nvals1
 
     Nvals2 = num_basis.(BS2.shells)
-    ao_offset2 = [sum(Nvals2[1:(i-1)]) for i = 1:BS2.nshells]
+    ao_offset2 = cumsum(Nvals2) .- Nvals2
 
     for i = 1:BS1.nshells
         atom_i = BS1.shells[i].atom

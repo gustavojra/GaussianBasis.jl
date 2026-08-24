@@ -208,6 +208,28 @@ function workerpool(work!, allocate, inputs; chunksize,ntasks = Threads.nthreads
 end
 
 """
+    unique_ij(imax::Integer, jmax::Integer = imax) -> Vector{Tuple{Int,Int}}
+
+All `(i,j)` pairs with `1 <= i <= imax` and `i <= j <= jmax` -- the
+canonical upper-triangle shell-pair worklist `workerpool`-based full-tensor
+builders (`get_1e_matrix!`, `get_multipole_matrix!`) iterate over, relying
+on `X_ij = X_ji^T` symmetry to compute each unordered shell pair once and
+mirror it. Pre-sized and filled directly instead of `collect`-ed from a
+lazy generator, so there's a single allocation instead of the repeated
+grow/copy `collect` does when it can't know the final length upfront.
+"""
+function unique_ij(imax::Integer, jmax::Integer = imax)
+    n = imax == jmax ? (imax*(imax+1)) ÷ 2 : sum(max(jmax - i + 1, 0) for i in 1:imax)
+    pairs = Vector{Tuple{Int,Int}}(undef, n)
+    k = 0
+    for i in 1:imax, j in i:jmax
+        k += 1
+        pairs[k] = (i, j)
+    end
+    return pairs
+end
+
+"""
     on_atom_flags(BS::BasisSet, iA::Int, shells...)
 
 Whether each of `shells` (any number of shell indices) sits on atom `iA`, as

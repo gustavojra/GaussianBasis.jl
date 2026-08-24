@@ -20,7 +20,7 @@ function sparseERI_2e4c(BS::BasisSet, cutoff = 1e-12)
     Nmax = maximum(Nvals)
 
     # Offset list for each shell, used to map shell index to AO index
-    ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:BS.nshells]
+    ao_offset = cumsum(Nvals) .- Nvals
 
     # Unique shell pairs with i < j
     num_ij = (BS.nshells^2 - BS.nshells) ÷ 2 + BS.nshells
