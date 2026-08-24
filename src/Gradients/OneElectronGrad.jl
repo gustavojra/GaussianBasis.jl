@@ -33,7 +33,7 @@ the nuclear-coordinate convention: libcint's `cint1e_ipovlp_sph!` computes
 > `i,j` and `out` yourself.
 """
 function ∇overlap_μ!(out, BS::BasisSet{LCint}, i::Int, j::Int)
-    cint1e_ipovlp_sph!(out, [i, j], BS.lib)
+    cint1e_ipovlp_sph!(out, @SVector([i, j]), BS.lib)
     out .*= -1.0
     return out
 end
@@ -45,7 +45,7 @@ Same as [`∇overlap_μ!`](@ref), differentiated with respect to shell `j`
 (the "ν" AO) instead of `i`. Same lack of bounds checking applies.
 """
 function ∇overlap_ν!(out, BS::BasisSet{LCint}, i::Int, j::Int)
-    cint1e_ipovlp_sph!(out, [j, i], BS.lib)
+    cint1e_ipovlp_sph!(out, @SVector([j, i]), BS.lib)
     out .*= -1.0
     return out
 end
@@ -151,7 +151,7 @@ Same as [`∇overlap_μ!`](@ref) (same sign-flip reasoning, same lack of
 bounds checking), for the kinetic energy operator instead of overlap.
 """
 function ∇kinetic_μ!(out, BS::BasisSet{LCint}, i::Int, j::Int)
-    cint1e_ipkin_sph!(out, [i, j], BS.lib)
+    cint1e_ipkin_sph!(out, @SVector([i, j]), BS.lib)
     out .*= -1.0
     return out
 end
@@ -163,7 +163,7 @@ Same as [`∇kinetic_μ!`](@ref), differentiated with respect to shell `j`
 (the "ν" AO) instead of `i`. Same lack of bounds checking applies.
 """
 function ∇kinetic_ν!(out, BS::BasisSet{LCint}, i::Int, j::Int)
-    cint1e_ipkin_sph!(out, [j, i], BS.lib)
+    cint1e_ipkin_sph!(out, @SVector([j, i]), BS.lib)
     out .*= -1.0
     return out
 end
@@ -281,7 +281,7 @@ derivation).
 > risks as [`∇overlap_μ!`](@ref) apply here too.
 """
 function ∇nuclear_μ!(out, BS::BasisSet{LCint}, charge_atm, i::Int, j::Int)
-    cint1e_ipnuc_sph!(out, Cint.([i-1, j-1]), charge_atm, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
+    cint1e_ipnuc_sph!(out, @SVector(Cint[i-1, j-1]), charge_atm, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
     out .*= -1.0
     return out
 end
@@ -293,7 +293,7 @@ Same as [`∇nuclear_μ!`](@ref), differentiated with respect to shell `j`
 (the "ν" AO) instead of `i`. Same lack of bounds checking applies.
 """
 function ∇nuclear_ν!(out, BS::BasisSet{LCint}, charge_atm, i::Int, j::Int)
-    cint1e_ipnuc_sph!(out, Cint.([j-1, i-1]), charge_atm, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
+    cint1e_ipnuc_sph!(out, @SVector(Cint[j-1, i-1]), charge_atm, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
     out .*= -1.0
     return out
 end
@@ -464,7 +464,7 @@ function ∇nuclear!(out, BS::BasisSet, A)
                 J = (joff+1):(joff+Nj)
 
                 # + ⟨i'|Va|j⟩ + ⟨i|Va|j'⟩   (Note that Va is the potential of the nuclei A alone!!)
-                cint1e_ipnuc_sph!(buf, Cint.([i-1,j-1]), only_A, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
+                cint1e_ipnuc_sph!(buf, @SVector(Cint[i-1,j-1]), only_A, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
 
                 # Get strides for each cartesian
                 for k in 1:3
@@ -489,7 +489,7 @@ function ∇nuclear!(out, BS::BasisSet, A)
                 J = (joff+1):(joff+Nj)
 
                 # - ⟨i'|∑Vc|j⟩ - ⟨i|∑Vc|j'⟩ c != a
-                cint1e_ipnuc_sph!(buf, Cint.([i-1,j-1]), no_A, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
+                cint1e_ipnuc_sph!(buf, @SVector(Cint[i-1,j-1]), no_A, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
 
                 for k in 1:3
                     r = (1+Nij*(k-1)):(k*Nij)
@@ -513,14 +513,14 @@ function ∇nuclear!(out, BS::BasisSet, A)
                 J = (joff+1):(joff+Nj)
 
                 # - ⟨i'|∑Vc|j⟩ + ⟨i|Va|j'⟩ c != a
-                cint1e_ipnuc_sph!(buf, Cint.([i-1,j-1]), no_A, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
+                cint1e_ipnuc_sph!(buf, @SVector(Cint[i-1,j-1]), no_A, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
                 for k in 1:3
                     r = (1+Nij*(k-1)):(k*Nij)
                     ∇k = buf[r]
                     out[I,J,k] .-= reshape(∇k, Int(Ni), Int(Nj))
                 end
 
-                cint1e_ipnuc_sph!(buf, Cint.([j-1,i-1]), only_A, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
+                cint1e_ipnuc_sph!(buf, @SVector(Cint[j-1,i-1]), only_A, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
                 for k in 1:3
                     r = (1+Nij*(k-1)):(k*Nij)
                     ∇k = buf[r]

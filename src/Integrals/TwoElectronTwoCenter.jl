@@ -22,7 +22,7 @@ full-tensor form builds on.
   - `ERI_2e2c!(out, BS)`: `out` must be a dense `nbas × nbas` matrix.
 """
 function ERI_2e2c!(out, BS::BasisSet{LCint}, i, j)
-    cint2c2e_sph!(out, [i,j], BS.lib)
+    cint2c2e_sph!(out, @SVector([i,j]), BS.lib)
 end
 
 """

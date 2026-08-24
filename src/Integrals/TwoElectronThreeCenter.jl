@@ -25,7 +25,7 @@ Mutating counterpart of [`ERI_2e3c`](@ref): writes into the caller-supplied
     `BS1.nbas × BS1.nbas × BS2.nbas` array.
 """
 function ERI_2e3c!(out, BS::BasisSet{LCint}, i, j, k)
-    cint3c2e_sph!(out, [i,j,k], BS.lib)
+    cint3c2e_sph!(out, @SVector([i,j,k]), BS.lib)
 end
 
 function ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, i, j, k)

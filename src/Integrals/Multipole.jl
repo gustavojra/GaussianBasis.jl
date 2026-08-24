@@ -19,7 +19,7 @@ full-tensor form builds on.
     axis indexing the `x,y,z` Cartesian components.
   - `dipole!(out, BS)`: `out` must be a dense `nbas × nbas × 3` array.
 """
-dipole!(out, BS::BasisSet{LCint}, i, j) = cint1e_r_sph!(out, [i,j], BS.lib)
+dipole!(out, BS::BasisSet{LCint}, i, j) = cint1e_r_sph!(out, @SVector([i,j]), BS.lib)
 
 """
     quadrupole!(out, BS::BasisSet, i, j)
@@ -35,7 +35,7 @@ full-tensor form builds on.
     block for shells `i`/`j` of `BS` (shell indices, not AO indices).
   - `quadrupole!(out, BS)`: `out` must be a dense `nbas × nbas × 3 × 3` array.
 """
-quadrupole!(out, BS::BasisSet{LCint}, i, j) = cint1e_rr_sph!(out, [i,j], BS.lib)
+quadrupole!(out, BS::BasisSet{LCint}, i, j) = cint1e_rr_sph!(out, @SVector([i,j]), BS.lib)
 
 """
     octupole!(out, BS::BasisSet, i, j)
@@ -52,7 +52,7 @@ full-tensor form builds on.
   - `octupole!(out, BS)`: `out` must be a dense `nbas × nbas × 3 × 3 × 3`
     array.
 """
-octupole!(out, BS::BasisSet{LCint}, i, j) = cint1e_rrr_sph!(out, [i,j], BS.lib)
+octupole!(out, BS::BasisSet{LCint}, i, j) = cint1e_rrr_sph!(out, @SVector([i,j]), BS.lib)
 
 """
     hexadecapole!(out, BS::BasisSet, i, j)
@@ -70,7 +70,7 @@ primitive the full-tensor form builds on.
   - `hexadecapole!(out, BS)`: `out` must be a dense
     `nbas × nbas × 3 × 3 × 3 × 3` array.
 """
-hexadecapole!(out, BS::BasisSet{LCint}, i, j) = cint1e_rrrr_sph!(out, [i,j], BS.lib)
+hexadecapole!(out, BS::BasisSet{LCint}, i, j) = cint1e_rrrr_sph!(out, @SVector([i,j]), BS.lib)
 
 function dipole(BS::BasisSet, i, j)
     out = zeros(num_basis(BS.shells[i]), num_basis(BS.shells[j]), 3)

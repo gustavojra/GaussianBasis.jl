@@ -450,28 +450,28 @@ function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, 
             bufy = zeros(Cdouble, Ni, Nj, Nk, Nl)
             bufz = zeros(Cdouble, Ni, Nj, Nk, Nl)
             if in_A[i]
-                cint2e_ip1_sph!(buf, [i,j,k,l], BS.lib)
+                cint2e_ip1_sph!(buf, @SVector([i,j,k,l]), BS.lib)
                 bufx += reshape(buf[1:Nijkl], Ni, Nj, Nk, Nl)
                 bufy += reshape(buf[Nijkl+1:2*Nijkl], Ni, Nj, Nk, Nl)
                 bufz += reshape(buf[2*Nijkl+1:3*Nijkl], Ni, Nj, Nk, Nl)
             end
 
             if in_A[j]
-                cint2e_ip1_sph!(buf, [j,i,k,l], BS.lib)
+                cint2e_ip1_sph!(buf, @SVector([j,i,k,l]), BS.lib)
                 bufx += permutedims(reshape(buf[1:Nijkl],           Nj, Ni, Nk, Nl), (2,1,3,4))
                 bufy += permutedims(reshape(buf[Nijkl+1:2*Nijkl],   Nj, Ni, Nk, Nl), (2,1,3,4))
                 bufz += permutedims(reshape(buf[2*Nijkl+1:3*Nijkl], Nj, Ni, Nk, Nl), (2,1,3,4))
             end
 
             if in_A[k]
-                cint2e_ip1_sph!(buf, [k,l,i,j], BS.lib)
+                cint2e_ip1_sph!(buf, @SVector([k,l,i,j]), BS.lib)
                 bufx += permutedims(reshape(buf[1:Nijkl],           Nk, Nl, Ni, Nj), (3,4,1,2))
                 bufy += permutedims(reshape(buf[Nijkl+1:2*Nijkl],   Nk, Nl, Ni, Nj), (3,4,1,2))
                 bufz += permutedims(reshape(buf[2*Nijkl+1:3*Nijkl], Nk, Nl, Ni, Nj), (3,4,1,2))
             end
 
             if in_A[l]
-                cint2e_ip1_sph!(buf, [l,k,i,j], BS.lib)
+                cint2e_ip1_sph!(buf, @SVector([l,k,i,j]), BS.lib)
                 bufx += permutedims(reshape(buf[1:Nijkl],           Nl, Nk, Ni, Nj), (3,4,2,1))
                 bufy += permutedims(reshape(buf[Nijkl+1:2*Nijkl],   Nl, Nk, Ni, Nj), (3,4,2,1))
                 bufz += permutedims(reshape(buf[2*Nijkl+1:3*Nijkl], Nl, Nk, Ni, Nj), (3,4,2,1))
@@ -622,7 +622,7 @@ function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA; Bmerged::Union{Noth
 
 	        # [i'j|k]
                 if x_in_A[1]
-                    cint3c2e_ip1_sph!(buf, [i,j,k+BS1.nshells], Bmerged.lib)
+                    cint3c2e_ip1_sph!(buf, @SVector([i,j,k+BS1.nshells]), Bmerged.lib)
                     for q in 1:3
                         r = (1+Nijk*(q-1)):(q*Nijk)
                         ∇q = reshape(buf[r], Int(Ni), Int(Nj), Int(Nk))
@@ -632,7 +632,7 @@ function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA; Bmerged::Union{Noth
 
                 # [ij'|k]
                 if x_in_A[2]
-                    cint3c2e_ip1_sph!(buf, [j,i,k+BS1.nshells], Bmerged.lib)
+                    cint3c2e_ip1_sph!(buf, @SVector([j,i,k+BS1.nshells]), Bmerged.lib)
                     for q in 1:3
                         r = (1+Nijk*(q-1)):(q*Nijk)
                         ∇q = reshape(buf[r], Int(Nj), Int(Ni), Int(Nk))
@@ -642,7 +642,7 @@ function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA; Bmerged::Union{Noth
 
                 # [ij|k']
                 if x_in_A[3]
-                    cint3c2e_ip2_sph!(buf, [i,j,k+BS1.nshells], Bmerged.lib)
+                    cint3c2e_ip2_sph!(buf, @SVector([i,j,k+BS1.nshells]), Bmerged.lib)
                     for q in 1:3
                         r = (1+Nijk*(q-1)):(q*Nijk)
                         ∇q = reshape(buf[r], Int(Ni), Int(Nj), Int(Nk))
@@ -727,7 +727,7 @@ function ∇ERI_2e2c!(out, BS::BasisSet, iA)
 
             # [i'|j]
             if x_in_A[1]
-                cint2c2e_ip1_sph!(buf, [i,j], BS.lib)
+                cint2c2e_ip1_sph!(buf, @SVector([i,j]), BS.lib)
                 for q in 1:3
                     r = (1+Nij*(q-1)):(q*Nij)
                     ∇q = reshape(buf[r], Int(Ni), Int(Nj))
@@ -737,7 +737,7 @@ function ∇ERI_2e2c!(out, BS::BasisSet, iA)
 
             # [i|j']
             if x_in_A[2]
-                cint2c2e_ip1_sph!(buf, [j,i], BS.lib)
+                cint2c2e_ip1_sph!(buf, @SVector([j,i]), BS.lib)
                 for q in 1:3
                     r = (1+Nij*(q-1)):(q*Nij)
                     ∇q = reshape(buf[r], Int(Nj), Int(Ni))
