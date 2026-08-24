@@ -22,38 +22,54 @@ function sparseERI_2e4c(BS::BasisSet, cutoff = 1e-12)
     # Offset list for each shell, used to map shell index to AO index
     ao_offset = cumsum(Nvals) .- Nvals
 
-    # Unique shell pairs with i < j
-    num_ij = (BS.nshells^2 - BS.nshells) ÷ 2 + BS.nshells
+    # Unique shell pairs (i<=j), ordered so that ij_vals[n] is the pair with
+    # index2(i-1,j-1) == n-1 -- σvals below is indexed by that same composite
+    # index, so σvals[n] is the screening factor for ij_vals[n].
+    ij_vals = unique_ij(BS.nshells)
+    num_ij = length(ij_vals)
 
-    # Pre allocate array to save ij pairs
-    ij_vals = Vector{NTuple{2,Int32}}(undef, num_ij)
-
-    # Pre allocate array to save σij, that is the screening parameter for Schwarz
+    # Cauchy-Schwarz screening factors σ_ij = sqrt(max |(ij|ij)|) over the
+    # shell-pair block, giving the bound |(ij|kl)| <= σ_ij * σ_kl, so a whole
+    # shell quartet can be skipped when σ_ij*σ_kl <= cutoff.
+    #
+    # (ij|ij) -- shells (i,j,i,j) -- is the integral the bound is built from.
+    # Note the block maximum is legitimate here and equals the maximum over the
+    # block's diagonal elements (mu nu|mu nu): the (ij|ij) block is a Gram
+    # matrix in the Coulomb metric, so by Cauchy-Schwarz no off-diagonal
+    # element can exceed the largest diagonal one.
     σvals = zeros(Cdouble, num_ij)
-
-    ### Loop thorugh i and j such that i ≤ j. Save each pair into ij_vals and compute √σij for integral screening
     tmp = zeros(Cdouble, Nmax^4)
-    lim = Int32(BS.nshells - 1)
-    @inbounds for i = zero(Int32):lim
-        for j = i:lim
-            idx = index2(i,j) + 1
-            ij_vals[idx] = (i+1,j+1)
-            ERI_2e4c!(tmp, BS, i+1, i+1, j+1 ,j+1)
-            σvals[idx] = √maximum(tmp)
-        end
+    @inbounds for (idx, (i, j)) in enumerate(ij_vals)
+        nblk = (Nvals[i]*Nvals[j])^2
+        ERI_2e4c!(tmp, BS, i, j, i, j)
+        # abs, and only over the nblk entries this call actually wrote -- `tmp`
+        # is Nmax^4 long and keeps stale data from previous iterations beyond
+        # that point.
+        σvals[idx] = √maximum(abs, view(tmp, 1:nblk))
     end
 
-    ijkl_vals = Iterators.flatten((((ij_vals[ij]..., ij_vals[kl]...) for ij in 1:kl if σvals[ij] * σvals[kl] > cutoff) for kl = 1:num_ij))
-
-    # Upper bound on the number of surviving AO elements, from the block sizes of
-    # the shell quartets that passed screening (no ERI calls needed, just Nvals
-    # products). Used only to sizehint! the per-task buffers below: geometric
+    # Surviving shell quartets, together with an upper bound on the number of
+    # AO elements they can contribute (from block sizes alone, no ERI calls).
+    # Built in a single pass: this used to be a lazy flatten-of-filtered-
+    # generators that was walked twice -- once to accumulate size_ub, once to
+    # fill the channel -- re-running the screening test both times, and whose
+    # eltype() inferred as Any. A concrete Vector fixes both.
+    #
+    # size_ub is used only to sizehint! the per-task buffers below: geometric
     # Vector growth is amortized O(1), but still copies ~2x the final size in
     # total over the doublings, so hinting close to the true size avoids that
     # overshoot (measured ~35% less peak memory on a dense system with the hint).
+    ijkl_vals = NTuple{4,Int16}[]
     size_ub = 0
-    for (i,j,k,l) in ijkl_vals
-        size_ub += Nvals[i]*Nvals[j]*Nvals[k]*Nvals[l]
+    @inbounds for kl in 1:num_ij
+        k, l = ij_vals[kl]
+        σkl = σvals[kl]
+        for ij in 1:kl
+            σvals[ij] * σkl > cutoff || continue
+            i, j = ij_vals[ij]
+            push!(ijkl_vals, (i, j, k, l))
+            size_ub += Nvals[i]*Nvals[j]*Nvals[k]*Nvals[l]
+        end
     end
 
     # Results are not written into a shared nbas-sized dense buffer (whose size
@@ -65,14 +81,11 @@ function sparseERI_2e4c(BS::BasisSet, cutoff = 1e-12)
     ntasks = Threads.nthreads()
     chunksize = 10
 
-    # ijkl_vals is a flatten-of-filtered-generators, and eltype() on that gives up
-    # and infers Any even though every element is really a NTuple{4,Int32} -- so
-    # the channel's element type is pinned explicitly here. Without this, (i,j,k,l)
-    # inside the hot loop below become dynamically typed, forcing every (I,J,K,L)
-    # tuple to be boxed before it can be pushed into a concretely-typed Vector;
-    # that alone was responsible for a many-fold blowup in both time and memory.
-    requests = Channel{Vector{NTuple{4,Int32}}}(Inf)
-    for chunk in Iterators.partition(ijkl_vals, chunksize)
+    # Partitioning a Vector yields views, so the channel is typed from the
+    # partition iterator itself rather than hardcoding a chunk type.
+    chunks = Iterators.partition(ijkl_vals, chunksize)
+    requests = Channel{eltype(chunks)}(Inf)
+    for chunk in chunks
         put!(requests, chunk)
     end
     close(requests)

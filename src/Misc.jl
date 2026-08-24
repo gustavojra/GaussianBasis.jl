@@ -208,23 +208,30 @@ function workerpool(work!, allocate, inputs; chunksize,ntasks = Threads.nthreads
 end
 
 """
-    unique_ij(imax::Integer, jmax::Integer = imax) -> Vector{Tuple{Int,Int}}
+    unique_ij(nshells::Integer) -> Vector{NTuple{2,Int16}}
 
-All `(i,j)` pairs with `1 <= i <= imax` and `i <= j <= jmax` -- the
-canonical upper-triangle shell-pair worklist `workerpool`-based full-tensor
-builders (`get_1e_matrix!`, `get_multipole_matrix!`) iterate over, relying
-on `X_ij = X_ji^T` symmetry to compute each unordered shell pair once and
-mirror it. Pre-sized and filled directly instead of `collect`-ed from a
-lazy generator, so there's a single allocation instead of the repeated
-grow/copy `collect` does when it can't know the final length upfront.
+All shell pairs `(i,j)` with `1 <= i <= j <= nshells` -- the canonical
+upper-triangle worklist that `workerpool`-based full-tensor builders
+(`get_1e_matrix!`, `get_multipole_matrix!`) iterate over, relying on
+`X_ij = X_ji^T` symmetry to compute each unordered pair once and mirror it.
+
+Ordered so that the pair at position `n` is exactly the one with
+`index2(i-1, j-1) == n - 1` (i.e. `j` outer, `i` inner). `sparseERI_2e4c`
+depends on that: it indexes its Cauchy-Schwarz `σvals` by the same
+composite index, so `σvals[n]` pairs with `unique_ij(...)[n]`.
+
+Pre-sized and filled directly rather than `collect`-ed from a lazy
+generator, so there's a single allocation instead of the repeated grow/copy
+`collect` does when it can't know the final length upfront. Elements are
+`Int16` for the same reason as [`unique_ijkl`](@ref) -- 4x smaller than
+`Int` at equal length, and shell counts never approach `typemax(Int16)`.
 """
-function unique_ij(imax::Integer, jmax::Integer = imax)
-    n = imax == jmax ? (imax*(imax+1)) ÷ 2 : sum(max(jmax - i + 1, 0) for i in 1:imax)
-    pairs = Vector{Tuple{Int,Int}}(undef, n)
-    k = 0
-    for i in 1:imax, j in i:jmax
-        k += 1
-        pairs[k] = (i, j)
+function unique_ij(nshells::Integer)
+    pairs = Vector{NTuple{2,Int16}}(undef, (nshells*(nshells+1)) ÷ 2)
+    n = 0
+    for j = one(Int16):Int16(nshells), i = one(Int16):j
+        n += 1
+        pairs[n] = (i, j)
     end
     return pairs
 end
