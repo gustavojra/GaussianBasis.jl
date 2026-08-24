@@ -1,0 +1,47 @@
+# Finite-difference reference for the analytic Hessian-integral functions,
+# mirroring Gradients/FiniteDifferences.jl one derivative order up: central
+# difference of the already-trusted, already-tested first-derivative
+# functions (∇overlap, ∇kinetic) rather than differencing raw energies/
+# integrals twice, so this only ever validates the *new* Hessian code against
+# machinery that's already independently verified.
+
+function ∇2FD_1e(BS::BasisSet, gradcallback, iA, iB, k, h=1e-5)
+    bs_plus, bs_minus = create_displacement(BS, iB, k, h)
+    Xplus = gradcallback(bs_plus, iA)
+    Xminus = gradcallback(bs_minus, iA)
+    return (Xplus .- Xminus) ./ (2*h/Molecules.bohr_to_angstrom)
+end
+
+function ∇2FD_overlap(BS::BasisSet, iA, iB, k, h=1e-5)
+    return ∇2FD_1e(BS, ∇overlap, iA, iB, k, h)
+end
+
+function ∇2FD_kinetic(BS::BasisSet, iA, iB, k, h=1e-5)
+    return ∇2FD_1e(BS, ∇kinetic, iA, iB, k, h)
+end
+
+function ∇2FD_nuclear(BS::BasisSet, iA, iB, k, h=1e-5)
+    return ∇2FD_1e(BS, ∇nuclear, iA, iB, k, h)
+end
+
+function ∇2FD_ERI_2e2c(BS::BasisSet, iA, iB, k, h=1e-5)
+    return ∇2FD_1e(BS, ∇ERI_2e2c, iA, iB, k, h)
+end
+
+function ∇2FD_ERI_2e3c(BS1::BasisSet, BS2::BasisSet, iA, iB, k, h=1e-5)
+    bs1_plus, bs1_minus = create_displacement(BS1, iB, k, h)
+    bs2_plus, bs2_minus = create_displacement(BS2, iB, k, h)
+    Xplus = ∇ERI_2e3c(bs1_plus, bs2_plus, iA)
+    Xminus = ∇ERI_2e3c(bs1_minus, bs2_minus, iA)
+    return (Xplus .- Xminus) ./ (2*h/Molecules.bohr_to_angstrom)
+end
+
+# Shell-quartet-level: central difference of the already-trusted shell-quartet
+# gradient primitive ∇ERI_2e4c(BS,iA,i,j,k,l), w.r.t. atom iB's dir-th
+# Cartesian direction.
+function ∇2FD_ERI_2e4c(BS::BasisSet, iA, iB, i, j, k, l, dir, h=1e-5)
+    bs_plus, bs_minus = create_displacement(BS, iB, dir, h)
+    Xplus = ∇ERI_2e4c(bs_plus, iA, i, j, k, l)
+    Xminus = ∇ERI_2e4c(bs_minus, iA, i, j, k, l)
+    return (Xplus .- Xminus) ./ (2*h/Molecules.bohr_to_angstrom)
+end

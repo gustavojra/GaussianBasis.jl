@@ -5,14 +5,17 @@ using Format
 using StaticArrays
 import Molecules: Atom, symbol, parse_file, parse_string
 
-export BasisFunction, BasisSet, SphericalShell, CartesianShell, get_shell, ACSint, LCint, atomic_orbital_amplitude
+export ShellFunction, BasisSet, SphericalShell, CartesianShell
+export get_shell, ACSint, LCint, atomic_orbital_amplitude, num_basis
 
-abstract type BasisFunction end
+abstract type ShellFunction end
 
 @doc raw"""
      SphericalShell
 
-Object holding basis function information for an Spherical Shell.
+Object representing a shell of basis functions in Spherical coordinates. 
+The shells types are s, p, d, ... corresponding to angular momentum numbers l = 0, 1, 2, ...
+For each shell, there are 2l+1 basis functions corresponding to the magnetic quantum number m = -l, ..., l.
 
 # Fields
 
@@ -25,8 +28,10 @@ Object holding basis function information for an Spherical Shell.
 # Examples
 
 ```julia
-julia> χ = SphericalShell(1, [1/√2, 1/√2], [5.0, 1.2])
-P shell with 3 basis built from 2 primitive gaussians
+julia> atom = GaussianBasis.Atom(1, 1.008, [0.0, 0.0, 0.0])
+julia> p_shell = SphericalShell(1, [1/√2, 1/√2], [5.0, 1.2], atom)
+P shell on Hydrogen at position [0.0, 0.0, 0.0] Å
+Contains 3 basis functions built from 2 primitive gaussians
 
 χ₁₋₁ =    0.7071067812⋅Y₁₋₁⋅r¹⋅exp(-5.0⋅r²)
      +    0.7071067812⋅Y₁₋₁⋅r¹⋅exp(-1.2⋅r²)
@@ -38,7 +43,7 @@ P shell with 3 basis built from 2 primitive gaussians
      +    0.7071067812⋅Y₁₁⋅r¹⋅exp(-1.2⋅r²)
 ```
 """
-struct SphericalShell{A<:Atom} <: BasisFunction
+struct SphericalShell{A<:Atom} <: ShellFunction
     l::Int
     coef::Vector{Float64}
     exp::Vector{Float64}
@@ -48,7 +53,11 @@ end
 @doc raw"""
      CartesianShell
 
-Object holding basis function information for an Cartesian Shell.
+Object representing a shell of basis functions in Cartesian coordinates. 
+The shells types are s, p, d, ... corresponding to angular momentum numbers l = 0, 1, 2, ...
+Note that the number of basis functions in a Cartesian shell is given by (l+1)(l+2)/2, which is larger 
+than the number of basis functions in a Spherical shell (2l+1) for l > 1.
+That is, m_l values are not well defined in Cartesian shells.
 
 # Fields
 
@@ -61,8 +70,10 @@ Object holding basis function information for an Cartesian Shell.
 # Examples
 
 ```julia
-julia> χ = CartesianShell(2, [1/√2], [5.0])
-D shell with 6 basis built from 1 primitive gaussians
+julia> atom = GaussianBasis.Atom(1, 1.008, [0.0, 0.0, 0.0])
+julia> d_shell = CartesianShell(2, [1/√2], [5.0], atom)
+D shell on Hydrogen at position [0.0, 0.0, 0.0] Å
+Contains 6 basis functions built from 1 primitive gaussian
 
 χ(x²) =    0.7071067812⋅x²⋅exp(-5.0⋅r²)
 
@@ -77,15 +88,21 @@ D shell with 6 basis built from 1 primitive gaussians
 χ(z²) =    0.7071067812⋅z²⋅exp(-5.0⋅r²)
 ```
 """
-struct CartesianShell{A<:Atom} <: BasisFunction
+struct CartesianShell{A<:Atom} <: ShellFunction
     l::Int
     coef::Vector{Float64}
     exp::Vector{Float64}
     atom::A
 end
 
-# Basis functions are created Spherical by default
-BasisFunction(l, coef, exp, atom) = SphericalShell(l,coef,exp, atom)
+# Shells are created Spherical by default
+ShellFunction(l, coef, exp, atom) = SphericalShell(l,coef,exp, atom)
+
+# Deprecated alias: `BasisFunction` was renamed to `ShellFunction` since one
+# object of this type is a whole shell (potentially several AOs), not a
+# single basis function -- see `BasisSet.nbas` vs. `BasisSet.nshells`.
+Base.@deprecate_binding BasisFunction ShellFunction
+
 # Number of basis in a shell
 num_basis(B::CartesianShell) = ((B.l + 1) * (B.l + 2)) ÷ 2
 num_basis(B::SphericalShell) = 2*B.l + 1
@@ -109,5 +126,6 @@ include("Libcint.jl")
 include("Acsint.jl")
 include("Integrals.jl")
 include("Gradients.jl")
+include("Hessians.jl")
 
 end # module

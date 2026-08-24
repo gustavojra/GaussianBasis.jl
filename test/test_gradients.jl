@@ -65,6 +65,34 @@ end
     end
 end
 
+@testset "Shell-pair-level gradients" begin
+    # ∇overlap/∇kinetic/∇nuclear(BS, iA, i, j) -- assembling every shell
+    # pair's (Ni,Nj,3) block should reproduce the already-validated
+    # whole-array ∇overlap/∇kinetic/∇nuclear(BS, iA) exactly (same
+    # underlying computation, no independent derivation, just a different
+    # slicing -- so this checks self-consistency, not the integrals
+    # themselves, which the FD tests above already cover).
+    Nvals = GaussianBasis.num_basis.(bs.shells)
+    ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:bs.nshells]
+
+    function assemble(f, iA)
+        out = zeros(bs.nbas, bs.nbas, 3)
+        for i in 1:bs.nshells, j in 1:bs.nshells
+            Ni, Nj = Nvals[i], Nvals[j]
+            I = (ao_offset[i]+1):(ao_offset[i]+Ni)
+            J = (ao_offset[j]+1):(ao_offset[j]+Nj)
+            out[I,J,:] .= f(bs, iA, i, j)
+        end
+        return out
+    end
+
+    for iA = 1:length(atoms)
+        @test ∇overlap(bs, iA) ≈ assemble(∇overlap, iA) atol=1e-12
+        @test ∇kinetic(bs, iA) ≈ assemble(∇kinetic, iA) atol=1e-12
+        @test ∇nuclear(bs, iA) ≈ assemble(∇nuclear, iA) atol=1e-12
+    end
+end
+
 @testset "∂[ij|kl]/∂X" begin
     @testset "Dense" begin
         for iA = 1:length(atoms)
@@ -79,7 +107,30 @@ end
         for iA = 1:length(atoms)
             sparse = ∇sparseERI_2e4c(bs, iA)
             dense = ∇ERI_2e4c(bs, iA)
-            @test SinD(sparse, dense) 
+            @test SinD(sparse, dense)
+        end
+    end
+
+    @testset "Shell-quartet-level" begin
+        # ∇ERI_2e4c(BS, iA, i, j, k, l) -- assembling every shell quartet's
+        # (Ni,Nj,Nk,Nl,3) block should reproduce the already-validated dense
+        # ∇ERI_2e4c(BS, iA) exactly (same underlying formula, no
+        # permutation-symmetry propagation, just direct per-quartet calls --
+        # self-consistency check, not a fresh integral validation).
+        Nvals = GaussianBasis.num_basis.(bs.shells)
+        ao_offset = [sum(Nvals[1:(i-1)]) for i = 1:bs.nshells]
+        for iA = 1:length(atoms)
+            dense = ∇ERI_2e4c(bs, iA)
+            assembled = zeros(bs.nbas, bs.nbas, bs.nbas, bs.nbas, 3)
+            for i in 1:bs.nshells, j in 1:bs.nshells, k in 1:bs.nshells, l in 1:bs.nshells
+                Ni, Nj, Nk, Nl = Nvals[i], Nvals[j], Nvals[k], Nvals[l]
+                I = (ao_offset[i]+1):(ao_offset[i]+Ni)
+                J = (ao_offset[j]+1):(ao_offset[j]+Nj)
+                K = (ao_offset[k]+1):(ao_offset[k]+Nk)
+                L = (ao_offset[l]+1):(ao_offset[l]+Nl)
+                assembled[I,J,K,L,:] .= ∇ERI_2e4c(bs, iA, i, j, k, l)
+            end
+            @test dense ≈ assembled atol=1e-10
         end
     end
 end

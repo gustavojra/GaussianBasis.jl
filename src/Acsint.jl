@@ -23,7 +23,7 @@ function cart_dim(L)
 end
 
 function generate_S_pair!(out, BS::BasisSet, s1, s2)
-    generate_S_pair!(out, BS.basis[s1], BS.basis[s2])
+    generate_S_pair!(out, BS.shells[s1], BS.shells[s2])
 end
 
 function generate_S_pair!(out, B1::CartesianShell, B2::CartesianShell)
@@ -71,7 +71,7 @@ function generate_S_pair!(out, B1::CartesianShell, B2::CartesianShell)
 end
 
 function generate_T_pair!(out, BS::BasisSet, s1, s2)
-    generate_T_pair!(out, BS.basis[s1], BS.basis[s2])
+    generate_T_pair!(out, BS.shells[s1], BS.shells[s2])
 end
 
 function generate_T_pair!(out, B1::CartesianShell, B2::CartesianShell)
@@ -233,7 +233,7 @@ end
 end
 
 function generate_V_pair!(out, BS::BasisSet, s1, s2)
-    generate_V_pair!(out, BS.basis[s1], BS.basis[s2], BS.atoms)
+    generate_V_pair!(out, BS.shells[s1], BS.shells[s2], BS.atoms)
 end
 
 function generate_V_pair!(out, B1::CartesianShell, B2::CartesianShell, atoms::Vector{<:Atom})
@@ -330,7 +330,7 @@ function generate_quanta_list2(am2, am1, am, N1)
 end
 
 function generate_ERI_quartet!(out, BS::BasisSet, s1, s2, s3, s4, α::Float64=1.0, β::Float64=0.0, ω::Float64=0.0)
-    generate_ERI_quartet!(out, BS.basis[s1], BS.basis[s2], BS.basis[s3], BS.basis[s4], α, β, ω)
+    generate_ERI_quartet!(out, BS.shells[s1], BS.shells[s2], BS.shells[s3], BS.shells[s4], α, β, ω)
 end
 
 function generate_ERI_quartet!(out, B1::CartesianShell, B2::CartesianShell, B3::CartesianShell, B4::CartesianShell,

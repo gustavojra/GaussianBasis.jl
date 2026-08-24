@@ -52,7 +52,12 @@ end
 
     ref_uniform = h5read(test_file, "sparseERIidx")
     ref_data = h5read(test_file, "sparseERIdata")
-    ref_idx = [Tuple(Int16.(ref_uniform[(1+4*(i-1)):(4+4*(i-1))])) for i in eachindex(ref_data)]
+    # sparseERIidx in the fixture was captured from a previous version of
+    # sparseERI_2e4c that returned 0-indexed AO indices; sparseERI_2e4c now
+    # returns 1-indexed AO indices (matching its docstring and every other
+    # indexing convention in this package), so the stored reference indices
+    # are shifted by 1 here rather than regenerating the fixture.
+    ref_idx = [Tuple(Int16.(ref_uniform[(1+4*(i-1)):(4+4*(i-1))])) .+ Int16(1) for i in eachindex(ref_data)]
 
     d = canonical_sparse_dict(idx, data)
     d_ref = canonical_sparse_dict(ref_idx, ref_data)

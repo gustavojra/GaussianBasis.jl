@@ -1,46 +1,82 @@
-# Returned elements are in whatever order tasks happened to finish in, not
-# sorted by index -- callers that need a canonical unique integral once (like
-# Fock builds) don't care about order, but don't rely on it either.
+"""
+    sparseERI_2e4c(BS::BasisSet, cutoff=1e-12) -> (indexes, values)
+
+Compute the unique, permutationally non-redundant two-electron four-center
+integrals `(ij|kl)` for `BS` (chemist's notation), applying Cauchy-Schwarz
+shell-pair screening and discarding any integral with `abs(value) <= cutoff`.
+
+Returns a pair `(indexes, values)`: `indexes` is a `Vector{NTuple{4,Int16}}`
+of `(I,J,K,L)` AO indices (1-based) and `values` the corresponding
+`Vector{Float64}` of integral values, `indexes[n]` paired with `values[n]`.
+Only one representative of each permutationally-equivalent AO quartet is
+returned. Element order is not sorted or otherwise guaranteed (it depends on
+how the underlying work is split across threads) -- callers that need a
+canonical unique integral once (e.g. Fock builds) don't care about order,
+but shouldn't rely on any particular one either.
+"""
 function sparseERI_2e4c(BS::BasisSet, cutoff = 1e-12)
     # Pre compute a list of angular momentum numbers (l) for each shell
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     Nmax = maximum(Nvals)
 
     # Offset list for each shell, used to map shell index to AO index
-    ao_offset = [sum(Nvals[1:(i-1)]) - 1 for i = 1:BS.nshells]
+    ao_offset = cumsum(Nvals) .- Nvals
 
-    # Unique shell pairs with i < j
-    num_ij = (BS.nshells^2 - BS.nshells) ÷ 2 + BS.nshells
+    # Unique shell pairs (i<=j), ordered so that ij_vals[n] is the pair with
+    # index2(i-1,j-1) == n-1 -- σvals below is indexed by that same composite
+    # index, so σvals[n] is the screening factor for ij_vals[n].
+    ij_vals = unique_ij(BS.nshells)
+    num_ij = length(ij_vals)
 
-    # Pre allocate array to save ij pairs
-    ij_vals = Vector{NTuple{2,Int32}}(undef, num_ij)
-
-    # Pre allocate array to save σij, that is the screening parameter for Schwarz
+    # Cauchy-Schwarz screening factors σ_ij = sqrt(max |(ij|ij)|) over the
+    # shell-pair block, giving the bound |(ij|kl)| <= σ_ij * σ_kl, so a whole
+    # shell quartet can be skipped when σ_ij*σ_kl <= cutoff.
+    #
+    # (ij|ij) -- shells (i,j,i,j) -- is the integral the bound is built from.
+    # Note the block maximum is legitimate here and equals the maximum over the
+    # block's diagonal elements (mu nu|mu nu): the (ij|ij) block is a Gram
+    # matrix in the Coulomb metric, so by Cauchy-Schwarz no off-diagonal
+    # element can exceed the largest diagonal one.
+    # Kept serial on purpose. These are O(nshells^2) independent evaluations so
+    # they parallelize trivially, but it was measured and not worth the noise:
+    # on a 2-water chain / cc-pVDZ the phase went 4.21 -> 2.77 ms (1.52x, capped
+    # by task-pool overhead over only a few hundred cheap shell pairs), which is
+    # ~4% of the routine's total and well inside its run-to-run variance
+    # (min 26.3 / median 37.1 ms over 15 repeats at 24 threads). Revisit only if
+    # profiling on a much larger system shows this phase actually mattering.
     σvals = zeros(Cdouble, num_ij)
-
-    ### Loop thorugh i and j such that i ≤ j. Save each pair into ij_vals and compute √σij for integral screening
     tmp = zeros(Cdouble, Nmax^4)
-    lim = Int32(BS.nshells - 1)
-    @inbounds for i = zero(Int32):lim
-        for j = i:lim
-            idx = index2(i,j) + 1
-            ij_vals[idx] = (i+1,j+1)
-            ERI_2e4c!(tmp, BS, i+1, i+1, j+1 ,j+1)
-            σvals[idx] = √maximum(tmp)
-        end
+    @inbounds for (idx, (i, j)) in enumerate(ij_vals)
+        nblk = (Nvals[i]*Nvals[j])^2
+        ERI_2e4c!(tmp, BS, i, j, i, j)
+        # abs, and only over the nblk entries this call actually wrote -- `tmp`
+        # is Nmax^4 long and keeps stale data from previous iterations beyond
+        # that point.
+        σvals[idx] = √maximum(abs, view(tmp, 1:nblk))
     end
 
-    ijkl_vals = Iterators.flatten((((ij_vals[ij]..., ij_vals[kl]...) for ij in 1:kl if σvals[ij] * σvals[kl] > cutoff) for kl = 1:num_ij))
-
-    # Upper bound on the number of surviving AO elements, from the block sizes of
-    # the shell quartets that passed screening (no ERI calls needed, just Nvals
-    # products). Used only to sizehint! the per-task buffers below: geometric
+    # Surviving shell quartets, together with an upper bound on the number of
+    # AO elements they can contribute (from block sizes alone, no ERI calls).
+    # Built in a single pass: this used to be a lazy flatten-of-filtered-
+    # generators that was walked twice -- once to accumulate size_ub, once to
+    # fill the channel -- re-running the screening test both times, and whose
+    # eltype() inferred as Any. A concrete Vector fixes both.
+    #
+    # size_ub is used only to sizehint! the per-task buffers below: geometric
     # Vector growth is amortized O(1), but still copies ~2x the final size in
     # total over the doublings, so hinting close to the true size avoids that
     # overshoot (measured ~35% less peak memory on a dense system with the hint).
+    ijkl_vals = NTuple{4,Int16}[]
     size_ub = 0
-    for (i,j,k,l) in ijkl_vals
-        size_ub += Nvals[i]*Nvals[j]*Nvals[k]*Nvals[l]
+    @inbounds for kl in 1:num_ij
+        k, l = ij_vals[kl]
+        σkl = σvals[kl]
+        for ij in 1:kl
+            σvals[ij] * σkl > cutoff || continue
+            i, j = ij_vals[ij]
+            push!(ijkl_vals, (i, j, k, l))
+            size_ub += Nvals[i]*Nvals[j]*Nvals[k]*Nvals[l]
+        end
     end
 
     # Results are not written into a shared nbas-sized dense buffer (whose size
@@ -52,14 +88,11 @@ function sparseERI_2e4c(BS::BasisSet, cutoff = 1e-12)
     ntasks = Threads.nthreads()
     chunksize = 10
 
-    # ijkl_vals is a flatten-of-filtered-generators, and eltype() on that gives up
-    # and infers Any even though every element is really a NTuple{4,Int32} -- so
-    # the channel's element type is pinned explicitly here. Without this, (i,j,k,l)
-    # inside the hot loop below become dynamically typed, forcing every (I,J,K,L)
-    # tuple to be boxed before it can be pushed into a concretely-typed Vector;
-    # that alone was responsible for a many-fold blowup in both time and memory.
-    requests = Channel{Vector{NTuple{4,Int32}}}(Inf)
-    for chunk in Iterators.partition(ijkl_vals, chunksize)
+    # Partitioning a Vector yields views, so the channel is typed from the
+    # partition iterator itself rather than hardcoding a chunk type.
+    chunks = Iterators.partition(ijkl_vals, chunksize)
+    requests = Channel{eltype(chunks)}(Inf)
+    for chunk in chunks
         put!(requests, chunk)
     end
     close(requests)
@@ -147,12 +180,31 @@ function sparseERI_2e4c(BS::BasisSet, cutoff = 1e-12)
 end
 
 function ERI_2e4c(BS::BasisSet, i, j, k, l)
-    out = zeros(eltype(BS.atoms[1].xyz), num_basis(BS.basis[i]), num_basis(BS.basis[j]),
-                num_basis(BS.basis[k]), num_basis(BS.basis[l]))
+    out = zeros(eltype(BS.atoms[1].xyz), num_basis(BS.shells[i]), num_basis(BS.shells[j]),
+                num_basis(BS.shells[k]), num_basis(BS.shells[l]))
     ERI_2e4c!(out, BS, i, j, k, l)
     return out
 end
 
+# Mutating, shell-quartet-level form of ERI_2e4c(BS, i, j, k, l): writes into
+# a caller-supplied `out` (sized (Ni,Nj,Nk,Nl)) instead of allocating.
+# Dispatches on the integral backend (LCint vs. the ACSint fallback below).
+"""
+    ERI_2e4c!(out, BS::BasisSet, i, j, k, l)
+    ERI_2e4c!(out, BS::BasisSet)
+
+Mutating counterpart of [`ERI_2e4c`](@ref): writes into the caller-supplied
+`out` instead of allocating. This shell-quartet form is the primitive the
+full-tensor form builds on.
+
+# Methods
+
+  - `ERI_2e4c!(out, BS, i, j, k, l)`: `out` must be `(Ni,Nj,Nk,Nl)`, the
+    `(ij|kl)` block (chemist's notation) for shells `i,j,k,l` of `BS` (shell
+    indices, not AO indices).
+  - `ERI_2e4c!(out, BS)`: `out` must be a dense
+    `nbas × nbas × nbas × nbas` array.
+"""
 function ERI_2e4c!(out, BS::BasisSet{LCint}, i, j, k, l)
     cint2e_sph!(out, @SVector([i,j,k,l]), BS.lib)
 end
@@ -161,6 +213,25 @@ function ERI_2e4c!(out, BS::BasisSet, i, j, k, l)
     generate_ERI_quartet!(out, BS, i, j, k, l)
 end
 
+"""
+    ERI_2e4c(BS::BasisSet) -> Array{Float64,4}
+    ERI_2e4c(BS::BasisSet, i, j, k, l) -> Array{Float64,4}
+
+Compute the two-electron four-center integral tensor `(ij|kl)` (chemist's
+notation), respecting the standard 8-fold permutational symmetry
+(`(ij|kl)=(ji|kl)=(ij|lk)=(kl|ij)=...`).
+
+# Methods
+
+  - `ERI_2e4c(BS)`: full, dense `nbas × nbas × nbas × nbas` tensor for `BS`.
+    For large basis sets prefer `sparseERI_2e4c`, which screens and stores
+    only the unique elements.
+  - `ERI_2e4c(BS, i, j, k, l)`: just the `(Ni,Nj,Nk,Nl)` block for shells
+    `i,j,k,l` of `BS` (shell indices, not AO indices).
+
+For repeated calls (e.g. in a hot loop), see `ERI_2e4c!`, which writes into
+a preallocated array instead of allocating.
+"""
 function ERI_2e4c(BS::BasisSet)
     N = BS.nbas
     out = zeros(N, N, N, N)
@@ -168,40 +239,32 @@ function ERI_2e4c(BS::BasisSet)
 end
 
 function ERI_2e4c!(out, BS::BasisSet)
+    # NOTE: `out` is deliberately not zeroed. Every unique quartet below is
+    # computed and scattered to all of its symmetry images, so every element
+    # of `out` is written exactly once and any prior contents are fully
+    # overwritten. Anything that makes the quartet loop skip work -- notably
+    # Cauchy-Schwarz screening, which `sparseERI_2e4c` does but this dense
+    # build intentionally does not -- breaks that invariant and MUST add a
+    # `fill!(out, 0.0)` here, or screened blocks will silently retain the
+    # caller's stale data.
+
     # Save a list containing the number of basis for each shell
-    Nvals = num_basis.(BS.basis)
+    Nvals = num_basis.(BS.shells)
     Nmax = maximum(Nvals)
 
     # Get slice corresponding to the address in S where the compute chunk goes
-    ranges = UnitRange{Int64}[]
-    iaccum = 1
-    for i = 1:BS.nshells
-        push!(ranges, iaccum:(iaccum+ Nvals[i] -1))
-        iaccum += Nvals[i]
-    end
+    ao_offset = cumsum(Nvals) .- Nvals
+    ranges = [(ao_offset[i]+1):(ao_offset[i]+Nvals[i]) for i = 1:BS.nshells]
 
     # Find unique (i,j,k,l) combinations given permutational symmetry
-    unique_idx = NTuple{4,Int16}[]
-    N = Int16(BS.nshells - 1)
-    ZERO = zero(Int16)
-    for i = ZERO:N
-        for j = i:N
-            for k = ZERO:N
-                for l = k:N
-                    if index2(i,j) < index2(k,l)
-                        continue
-                    end
-                    push!(unique_idx, (i,j,k,l))
-                end
-            end
-        end
-    end
+    unique_idx = unique_ijkl(BS.nshells)
 
     # Initialize array for results
     allocate(body) = body(zeros(Cdouble, Nmax^4))
-    workerpool(allocate, unique_idx; chunksize=10) do (i,j,k,l), buf
-        # Shift indexes (C starts with 0, Julia 1)
-        id, jd, kd, ld = i+1, j+1, k+1, l+1
+    workerpool(allocate, unique_idx; chunksize=10) do (id,jd,kd,ld), buf
+        # unique_ijkl yields 1-based shell indexes; the symmetry bookkeeping
+        # below is written against libcint's 0-based convention.
+        i, j, k, l = id-1, jd-1, kd-1, ld-1
         Ni, Nj, Nk, Nl = Nvals[id], Nvals[jd], Nvals[kd], Nvals[ld]
 
         # Compute ERI

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/gblogo.png" width="600" alt=""/>
+  <img src="docs/src/assets/gblogo.png" width="600" alt=""/>
 </p>
 
 <table align="center">
@@ -37,7 +37,13 @@ Current features include:
 - Two-electron two-center integral (2e2c)
 - Two-electrons three-center integral (2e3c)
 - Two-electrons four-center integral (2e4c)
-- Gradients (currrently under construction - *watch out!*)
+- Analytic gradients (first derivatives w.r.t. nuclear coordinates) for all
+  of the above
+- Analytic Hessians (second derivatives) for one-electron integrals
+  (overlap/kinetic/nuclear attraction) and the 2-center/3-center two-electron
+  integrals (density fitting). The dense 4-center ERI Hessian is not yet
+  available in GaussianBasis.jl itself -- see
+  [Derivatives](#derivatives-gradients-and-hessians) below.
 
 Integral computations use by default the integral library [libcint](https://github.com/sunqm/libcint) *via* [libcint_jll.jl](https://github.com/JuliaBinaryWrappers/libcint_jll.jl). A simple Julia-written integral module `Acsint.jl` is also available, but it is significantly slower than the `libcint`.  
 
@@ -64,28 +70,167 @@ julia> overlap(bset)
  0.646804  1.0
 ```
 
+# Basic Functions
+
 | Function      | Description | Formula |
 |---------------|-------------|:-------:|
-| `overlap`       | Overlap between two basis functions | ![S](assets/ovlp.png)|
-| `kinetic`       | Kinetic integral | ![T](assets/kin.png)|
-| `nuclear`       | Nuclear attraction integral  | ![V](assets/nuc.png)|
-| `ERI_2e4c`       | Electron repulsion integral - returns a full rank-4 tensor! | ![ERI](assets/4cERI.png)|
-| `sparseERI_2e4c`       | Electron repulsion integral - returns non-zero elements along with a index tuple | ![sERI](assets/4cERI.png)|
-| `ERI_2e3c`       | Electron repulsion integral over three centers. **Note:** this function requires another basis set as the second argument (that is the auxiliary basis set in [Density Fitting](http://vergil.chemistry.gatech.edu/notes/df.pdf)). It must be called as `ERI_2c3c(bset, aux)` | ![3cERI](assets/3cERI.png)|
-| `ERI_2e2c`       | Electron repulsion integral over two centers  | ![2cERI](assets/2cERI.png)|
+| `overlap`       | Overlap between two basis functions | $\langle \chi_i\|\chi_j \rangle$ |
+| `kinetic`       | Kinetic integral | $\frac{1}{2}\langle\chi_i\|\hat{p}^2\|\chi_j\rangle$|
+| `nuclear`       | Nuclear attraction integral  | $\sum_A\langle\chi_i\|\frac{Z_A}{\|R_A - r\|}\|\chi_j\rangle$|
+| `ERI_2e4c`       | Electron repulsion integral - returns a full rank-4 tensor. Chemist's notation. | $\left(\chi_i\chi_j\|\frac{1}{r}\|\chi_k\chi_l\right)$|
+| `sparseERI_2e4c`       | Electron repulsion integral - returns non-zero elements along with a index tuple. Chemist's notation. | $\left(\chi_i\chi_j\|\frac{1}{r}\|\chi_k\chi_l\right)$|
+| `ERI_2e3c`       | Electron repulsion integral over three centers. **Note:** this function requires another basis set as the second argument (that is the auxiliary basis set in [Density Fitting](http://vergil.chemistry.gatech.edu/notes/df.pdf)). It must be called as `ERI_2e3c(bset, aux)` | $\left(\chi_i\chi_j\|\frac{1}{r}\|P_k\right)$|
+| `ERI_2e2c`       | Electron repulsion integral over two centers  | $\left(P_i\|\frac{1}{r}\|Q_j\right)$|
+| `dipole`         | Dipole moment integral.                        | $\langle\chi_i\|\hat{x}\|\chi_j\rangle$ |
+
+Mutating versions of the functions are also available:
+
+```julia
+julia> T = zeros(2,2)
+julia> kinetic!(T, bset)
+2×2 Matrix{Float64}:
+ 0.760032  0.225205
+ 0.225205  0.760032
+```
+
+## Computing integrals element-wise
+
+For all integrals, you can get the full array by using the general syntax `integral(basisset)` (e.g. `overlap(bset)` or `ERI_2e4c(bset)`). Alternatively, you can specify a shell combination for which the integral must be computed
+```julia
+julia> ERI_2e4c(b1, 1,2,2,1)
+1×1×1×1 Array{Float64, 4}:
+[:, :, 1, 1] =
+ 0.2845189435761272
+
+julia> kinetic(b1, 1,2)
+1×1 Matrix{Float64}:
+ 0.2252049038643092
+ ```
+
+## Evaluating orbital amplitudes
+
+The function `atomic_orbital_amplitude(basisset, i, r)` can be used to calculate the atomic orbital amplitude of the `i`th basis function at positions `r`. `r` can be either a 3-vector for a single position or a 3× array for calculating many positions efficiently at once.
+
+```julia
+julia> bset = BasisSet("sto-3g", "H 0 0 0");
+julia> atomic_orbital_amplitude(bset, 1, [0.0,0.0,0.0])
+0.6282468778403579
+julia> atomic_orbital_amplitude(bset, 1, [0.1;0.2;0.3;;-0.1;0.3;-0.2])
+2-element Vector{Float64}:
+ 0.49840190793869554
+ 0.49840190793869554
+```
+
+# Derivatives (Gradients and Hessians)
+
+Analytic derivatives w.r.t. nuclear Cartesian coordinates are available for
+most of the integrals above. An additional argument `iA` is needed indicating which atom bears the coordinates being differentiated.
+
+```julia
+```bset = ∇overlap(bset, 2)
+2×2×3 Array{Float64, 3}:
+[:, :, 1] =
+  0.0       -0.345283
+ -0.345283   0.0
+
+[:, :, 2] =
+ 0.0  0.0
+ 0.0  0.0
+
+[:, :, 3] =
+ 0.0  0.0
+ 0.0  0.0
+```
+Note that the output is 3 times the original array's size corresponding to the derivatives in each cartesian direction. Hence, it is important to be mindful of the size of the materialized arrays. These are summarized below:
+
+## Gradients
+
+| Function | Output shape | Description |
+|---|---|---|
+| `∇overlap(bset, iA)` | `(nbas,nbas,3)` | Overlap gradient |
+| `∇kinetic(bset, iA)` | `(nbas,nbas,3)` | Kinetic energy gradient |
+| `∇nuclear(bset, iA)` | `(nbas,nbas,3)` | Nuclear attraction gradient |
+| `∇ERI_2e4c(bset, iA)` | `(nbas,nbas,nbas,nbas,3)` | Dense 4-center ERI gradient |
+| `∇sparseERI_2e4c(bset, iA)` | `(idx, ∇x, ∇y, ∇z)` | Screened, permutation-compressed 4-center ERI gradient -- see below |
+| `∇ERI_2e3c(bset, auxbset, iA)` | `(nbas,nbas,naux,3)` | 3-center ERI gradient (density fitting) |
+| `∇ERI_2e2c(auxbset, iA)` | `(naux,naux,3)` | 2-center (auxiliary metric) ERI gradient (density fitting) |
+
+`∇overlap`/`∇kinetic`/`∇nuclear` also have a shell-pair-level form, mirroring
+the plain integrals' `integral(bset, i, j)` shell-combination call shown
+above -- `∇overlap(bset, iA, i, j)` returns just the `(Ni,Nj,3)` block for
+shells `i,j`, instead of materializing the whole `(nbas,nbas,3)` array:
+```julia
+julia> ∇overlap(bset, 2, 1, 2)
+1×1×3 Array{Float64, 3}:
+[:, :, 1] =
+ -0.345283
+...
+```
+`∇overlap`/`∇kinetic` blocks are exactly zero (no libcint call made) whenever
+shells `i,j` are both on atom `iA` or both off it -- translational invariance
+makes both cases trivially zero, not merely small. `∇nuclear` has no such
+free case (every shell pair has *some* dependence on every atom, through the
+`Z_iA/|r-R_iA|` operator term alone), so it always does real work; it also
+rebuilds its internal charge-fudging arrays on every call, which is fine for
+a one-off shell pair but means you should prefer `∇nuclear(bset, iA)` over
+looping this yourself if you actually want the whole array -- the whole-array
+functions keep their own internal shell-pair loop (with the free-zero
+skipping and, for `∇nuclear`, the charge arrays built once and reused) and
+do **not** call these; the two are independent implementations validated
+against each other, not one layered on the other.
+
+`∇ERI_2e4c` has the same kind of shell-level form too, one level up:
+`∇ERI_2e4c(bset, iA, i, j, k, l)` returns just the `(Ni,Nj,Nk,Nl,3)` block
+for shell quartet `i,j,k,l`. Like overlap/kinetic (not nuclear), the bare
+Coulomb operator has no third "operator center" to differentiate, so the
+free-zero case is the same shape: exactly zero, no libcint call, whenever
+`i,j,k,l` are ALL on atom `iA` or ALL off it. No permutation-symmetry
+propagation is applied (unlike the whole-array function, which computes one
+canonical ordering and propagates it to all 8 symmetric positions purely as
+a performance optimization) -- call with whichever ordering you need, each
+is computed directly and independently. Besides mirroring the plain
+integrals' shell-combination call, this is meant as a building block for
+genuinely integral-direct gradient/CPHF code: a derivative integral is only
+ever needed once (to help form some contracted quantity like CPHF's RHS),
+unlike the plain energy ERI which gets reused across every SCF/CPHF
+iteration -- so there's no caching benefit given up by computing one
+quartet, contracting it immediately, and discarding it, the way there would
+be for the energy integral.
+
+## Hessians
+
+| Function | Output shape | Description |
+|---|---|---|
+| `∇2overlap(bset, iA, iB)` | `(nbas,nbas,3,3)` | Overlap Hessian |
+| `∇2kinetic(bset, iA, iB)` | `(nbas,nbas,3,3)` | Kinetic energy Hessian |
+| `∇2nuclear(bset, iA, iB)` | `(nbas,nbas,3,3)` | Nuclear attraction Hessian |
+| `∇2ERI_2e2c(auxbset, iA, iB)` | `(naux,naux,3,3)` | 2-center (auxiliary metric) ERI Hessian (density fitting) |
+| `∇2ERI_2e3c(bset, auxbset, iA, iB)` | `(nbas,nbas,naux,3,3)` | 3-center ERI Hessian (density fitting) |
+| `∇2ERI_2e4c(bset, iA, iB, i, j, k, l)` | `(Ni,Nj,Nk,Nl,3,3)` | Shell-quartet-level dense 4-center ERI Hessian -- see below |
+
+`∇2ERI_2e4c` has no whole-array form -- unlike the other Hessian integrals
+above, it's shell-quartet-level only, mirroring `∇ERI_2e4c(bset,iA,i,j,k,l)`
+one derivative order up. No Schwarz screening happens inside it (same split
+as the gradient version): it's meant to be called from a caller's own
+screened, shell-quartet loop, not looped over every quartet blindly. It's
+exactly zero, no libcint call made, whenever no shell touches `iA`, no shell
+touches `iB`, or (`iA==iB` and all four shells sit on that one atom --
+translational invariance, same reasoning as the gradient case, just also
+killing the *second* derivative here since the integral doesn't depend on
+that atom's position at all in this degenerate case).
 
 # Advanced Usage
 
 ## Basis Functions
-`BasisFunction` object is the central data type within this package. Here, `BasisFunction` is an abstract type with two concrete structures: `SphericalShell` and `CartesianShell`. By default `SphericalShell` is created. In general a spherical basis function is
+`ShellFunction` object is the central data type within this package. Here, `ShellFunction` is an abstract type with two concrete structures: `SphericalShell` and `CartesianShell`. By default `SphericalShell` is created. In general a spherical basis function is
 
-![BF](assets/bf.png)
+$$ \chi_{l,m} = \sum_n c_n \cdot Y_{l,m}\cdot r^l\cdot e^{-\xi_n r^2}$$
 
-where the sum goes over primitive functions. A `BasisFunction` object contains the data to reproduce the mathematical object, i.e. the angular momentum number (***l***), expansion coefficients (***c<sub>n</sub>***), and exponential factors (***&xi;<sub>n</sub>***). We can create a basis function by passing these arguments orderly:
+where the sum goes over primitive functions. A `ShellFunction` object contains the data to reproduce the mathematical object, i.e. the angular momentum number (***l***), expansion coefficients (***c<sub>n</sub>***), and exponential factors (***&xi;<sub>n</sub>***). We can create a basis function by passing these arguments orderly:
 ```julia
 julia> using StaticArrays
 julia> atom = GaussianBasis.Atom(8, 16.0, [1.0, 0.0, 0.0])
-julia> bf = BasisFunction(1, SVector(1/√2, 1/√2), SVector(5.0, 1.2), atom)
+julia> bf = ShellFunction(1, SVector(1/√2, 1/√2), SVector(5.0, 1.2), atom)
 P shell with 3 basis built from 2 primitive gaussians
 
 χ₁₋₁ =    0.7071067812⋅Y₁₋₁⋅r¹⋅exp(-5.0⋅r²)
@@ -142,9 +287,9 @@ julia> h2 = GaussianBasis.parse_string(
  ```
 Next, we create a vector of basis functions.
 ```julia
-julia> shells = [BasisFunction(0, SVector(0.5215367271), SVector(0.122), h2[1]),
-BasisFunction(0, SVector(0.5215367271), SVector(0.122), h2[2]),
-BasisFunction(1, SVector(1.9584045349), SVector(0.727), h2[2])];
+julia> shells = [ShellFunction(0, SVector(0.5215367271), SVector(0.122), h2[1]),
+ShellFunction(0, SVector(0.5215367271), SVector(0.122), h2[2]),
+ShellFunction(1, SVector(1.9584045349), SVector(0.727), h2[2])];
 ```
 Finally, we create the basis set object. Note that, you got to make sure your procedure is consistent. The atoms used to construct the basis set object must be in the `atom` vector, otherwise unexpected results may arise. 
 ```julia
@@ -161,7 +306,7 @@ The most import fields here are:
 ```julia
 julia> bset.name == "UnequalHydrogens"
 true
-julia> bset.basis == shells 
+julia> bset.shells == shells 
 true
 julia> bset.atoms == h2
 true
@@ -170,7 +315,7 @@ true
 ### Integrals over different basis sets
 
 Functions such as `ERI_2e3c` require two basis set as arguments. Looking at the corresponding equation
-![3cERI](assets/3cERI.png) we see two basis set: ***&Chi;*** and ***P***. If your first basis set has 2 basis functions and the second has 4, your output array is a 2x2x4 tensor. For example
+$(\chi_i\chi_j|P_k)$ we see two basis set: ***&Chi;*** and ***P***. If your first basis set has 2 basis functions and the second has 4, your output array is a 2x2x4 tensor. For example
 ```julia
 julia> b1 = BasisSet("sto-3g", """
               H        0.00      0.00     0.00                 
@@ -209,40 +354,3 @@ julia> kinetic(b1, b2)
  0.20091  0.203163  1.03401  0.314867
 ```
 This can be useful when working with projections from one basis set onto another. 
-
-### Computing integrals element-wise
-
-For all integrals, you can get the full array by using the general syntax `integral(basisset)` (e.g. `overlap(bset)` or `ERI_2e4c(bset)`). Alternatively, you can specify a shell combination for which the integral must be computed
-```julia
-julia> ERI_2e4c(b1, 1,2,2,1)
-1×1×1×1 Array{Float64, 4}:
-[:, :, 1, 1] =
- 0.2845189435761272
-
-julia> kinetic(b1, 1,2)
-1×1 Matrix{Float64}:
- 0.2252049038643092
- ```
-Mutating versions of the functions are also available 
-```julia
-julia> S = zeros(2,2);
-julia> overlap!(S, b1)
-julia> S
-2×2 Matrix{Float64}:
- 1.0       0.646804
- 0.646804  1.0
- ```
-
-### Evaluating orbital amplitudes
-
-The function `atomic_orbital_amplitude(basisset, i, r)` can be used to calculate the atomic orbital amplitude of the `i`th basis function at positions `r`. `r` can be either a 3-vector for a single position or a 3×… array for calculating many positions efficiently at once.
-
-```julia
-julia> bset = BasisSet("sto-3g", "H 0 0 0");
-julia> atomic_orbital_amplitude(bset, 1, [0.0,0.0,0.0])
-0.6282468778403579
-julia> atomic_orbital_amplitude(bset, 1, [0.1;0.2;0.3;;-0.1;0.3;-0.2])
-2-element Vector{Float64}:
- 0.49840190793869554
- 0.49840190793869554
-```
