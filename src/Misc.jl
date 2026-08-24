@@ -188,6 +188,33 @@ function show(io::IO, X::T) where T<:ShellFunction
     print(io, compact_string_repr(X))
 end
 
+"""
+    THREADING_THRESHOLD_1E
+
+Work below which the one-electron/multipole full-matrix builders
+(`get_1e_matrix!`, `get_multipole_matrix!`) run serially instead of going
+through [`workerpool`](@ref). Work is measured as the number of output
+elements written (`nbas^2`, times `3^N` Cartesian components for multipoles).
+
+These integrals are cheap enough that spawning a task per thread and routing
+shell pairs through a `Channel` can cost more than the integrals themselves.
+Measured `overlap!` on a 24-core machine, serial vs threaded (ms):
+
+| `nbas^2` |  49   |  169  |  576  |  3364 | 13456 | 53824 |
+|:---------|------:|------:|------:|------:|------:|------:|
+| serial   | 0.009 | 0.021 | 0.051 | 0.148 | 0.579 | 2.156 |
+| 24 tasks | 0.088 | 0.074 | 0.083 | 0.111 | 0.257 | 0.814 |
+
+The threaded path costs a roughly fixed ~0.07-0.08 ms of pool setup, so it
+only pays off once the work itself exceeds that -- crossover sits between
+576 and 3364, hence the value here. Below it the pool made a small-molecule
+`overlap!` nearly 10x slower than just doing the work.
+
+The two-electron builders are far more expensive per shell tuple and scale
+properly, so they always thread.
+"""
+const THREADING_THRESHOLD_1E = 2_000
+
 # adapted from https://juliafolds.github.io/data-parallelism/tutorials/concurrency-patterns/
 function workerpool(work!, allocate, inputs; chunksize,ntasks = Threads.nthreads())
     requests = Channel{Vector{eltype(inputs)}}(Inf)

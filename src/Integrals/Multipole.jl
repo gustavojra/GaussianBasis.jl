@@ -208,29 +208,45 @@ function get_multipole_matrix!(callback, out, BS::BasisSet, ::Val{N}) where N
     dims = ntuple(_ -> 3, Val(N))
     ncomp = 3^N
 
-    allocate(body) = body(zeros(Cdouble, ncomp * Nmax^2))
-    workerpool(allocate, ijs; chunksize=10) do (i,j), buf
-        @inbounds begin
-            Ni = Nvals[i]
-            Nj = Nvals[j]
-            Nij = Ni*Nj
-            ioff = ao_offset[i]
-            joff = ao_offset[j]
+    if Threads.nthreads() == 1 || ncomp * BS.nbas^2 < THREADING_THRESHOLD_1E
+        # See THREADING_THRESHOLD_1E -- same rationale as get_1e_matrix!, with
+        # the 3^N Cartesian components counted into the work estimate.
+        buf = zeros(Cdouble, ncomp * Nmax^2)
+        for (i,j) in ijs
+            _scatter_multipole!(callback, out, BS, i, j, buf, Nvals, ao_offset, dims)
+        end
+    else
+        allocate(body) = body(zeros(Cdouble, ncomp * Nmax^2))
+        workerpool(allocate, ijs; chunksize=10) do (i,j), buf
+            _scatter_multipole!(callback, out, BS, i, j, buf, Nvals, ao_offset, dims)
+        end
+    end
+    return out
+end
 
-            callback(buf, BS, i, j)
+# One shell pair for the rank>0 builders: evaluate into `buf`, then scatter each
+# of the 3^N Cartesian-component blocks into `out` with its i<->j mirror.
+# Shared by the serial and threaded paths so they can't drift apart.
+@inline function _scatter_multipole!(callback, out, BS, i, j, buf, Nvals, ao_offset, dims)
+    @inbounds begin
+        Ni = Nvals[i]
+        Nj = Nvals[j]
+        Nij = Ni*Nj
+        ioff = ao_offset[i]
+        joff = ao_offset[j]
 
-            for (n, ks) in enumerate(CartesianIndices(dims))
-                base = Nij*(n-1)
-                kt = Tuple(ks)
-                for js = 1:Nj, is = 1:Ni
-                    v = buf[base + is + Ni*(js-1)]
-                    out[ioff+is, joff+js, kt...] = v
-                    if i != j
-                        out[joff+js, ioff+is, kt...] = v
-                    end
+        callback(buf, BS, i, j)
+
+        for (n, ks) in enumerate(CartesianIndices(dims))
+            base = Nij*(n-1)
+            kt = Tuple(ks)
+            for js = 1:Nj, is = 1:Ni
+                v = buf[base + is + Ni*(js-1)]
+                out[ioff+is, joff+js, kt...] = v
+                if i != j
+                    out[joff+js, ioff+is, kt...] = v
                 end
             end
         end
     end
-    return out
 end

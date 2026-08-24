@@ -37,15 +37,21 @@ function sparseERI_2e4c(BS::BasisSet, cutoff = 1e-12)
     # block's diagonal elements (mu nu|mu nu): the (ij|ij) block is a Gram
     # matrix in the Coulomb metric, so by Cauchy-Schwarz no off-diagonal
     # element can exceed the largest diagonal one.
+    # Threaded: these are O(nshells^2) independent shell-quartet evaluations
+    # writing to disjoint σvals entries. Left serial this was ~11% of the whole
+    # routine's runtime at 24 threads, capping its speedup by Amdahl.
     σvals = zeros(Cdouble, num_ij)
-    tmp = zeros(Cdouble, Nmax^4)
-    @inbounds for (idx, (i, j)) in enumerate(ij_vals)
-        nblk = (Nvals[i]*Nvals[j])^2
-        ERI_2e4c!(tmp, BS, i, j, i, j)
-        # abs, and only over the nblk entries this call actually wrote -- `tmp`
-        # is Nmax^4 long and keeps stale data from previous iterations beyond
-        # that point.
-        σvals[idx] = √maximum(abs, view(tmp, 1:nblk))
+    allocate_σ(body) = body(zeros(Cdouble, Nmax^4))
+    workerpool(allocate_σ, 1:num_ij; chunksize=10) do idx, tmp
+        @inbounds begin
+            i, j = ij_vals[idx]
+            nblk = (Nvals[i]*Nvals[j])^2
+            ERI_2e4c!(tmp, BS, i, j, i, j)
+            # abs, and only over the nblk entries this call actually wrote --
+            # `tmp` is Nmax^4 long and keeps stale data from earlier iterations
+            # beyond that point.
+            σvals[idx] = √maximum(abs, view(tmp, 1:nblk))
+        end
     end
 
     # Surviving shell quartets, together with an upper bound on the number of

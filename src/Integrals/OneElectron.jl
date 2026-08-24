@@ -208,26 +208,42 @@ function get_1e_matrix!(callback, out, BS::BasisSet)
 
     ijs = unique_ij(BS.nshells)
 
-    allocate(body) = body(zeros(Cdouble, Nmax^2))
-    workerpool(allocate, ijs; chunksize=10) do (i,j), buf
-        @inbounds begin
-            Ni = Nvals[i]
-            Nj = Nvals[j]
-            ioff = ao_offset[i]
-            joff = ao_offset[j]
-
-            callback(buf, BS, i, j)
-
-            for js = 1:Nj, is = 1:Ni
-                v = buf[is + Ni*(js-1)]
-                out[ioff+is, joff+js] = v
-                if i != j
-                    out[joff+js, ioff+is] = v
-                end
-            end
+    if Threads.nthreads() == 1 || BS.nbas^2 < THREADING_THRESHOLD_1E
+        # Below the threshold the whole matrix takes less time to build than
+        # spawning the task pool costs -- see THREADING_THRESHOLD_1E.
+        buf = zeros(Cdouble, Nmax^2)
+        for (i,j) in ijs
+            _scatter_1e!(callback, out, BS, i, j, buf, Nvals, ao_offset)
+        end
+    else
+        allocate(body) = body(zeros(Cdouble, Nmax^2))
+        workerpool(allocate, ijs; chunksize=10) do (i,j), buf
+            _scatter_1e!(callback, out, BS, i, j, buf, Nvals, ao_offset)
         end
     end
     return out
+end
+
+# One shell pair: evaluate it into `buf` and scatter the (Ni,Nj) block into
+# `out`, mirroring over i<->j. Shared by the serial and threaded paths above so
+# the two can't drift apart.
+@inline function _scatter_1e!(callback, out, BS, i, j, buf, Nvals, ao_offset)
+    @inbounds begin
+        Ni = Nvals[i]
+        Nj = Nvals[j]
+        ioff = ao_offset[i]
+        joff = ao_offset[j]
+
+        callback(buf, BS, i, j)
+
+        for js = 1:Nj, is = 1:Ni
+            v = buf[is + Ni*(js-1)]
+            out[ioff+is, joff+js] = v
+            if i != j
+                out[joff+js, ioff+is] = v
+            end
+        end
+    end
 end
 
 ###########################################################
