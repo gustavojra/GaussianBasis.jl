@@ -219,40 +219,32 @@ function ERI_2e4c(BS::BasisSet)
 end
 
 function ERI_2e4c!(out, BS::BasisSet)
+    # NOTE: `out` is deliberately not zeroed. Every unique quartet below is
+    # computed and scattered to all of its symmetry images, so every element
+    # of `out` is written exactly once and any prior contents are fully
+    # overwritten. Anything that makes the quartet loop skip work -- notably
+    # Cauchy-Schwarz screening, which `sparseERI_2e4c` does but this dense
+    # build intentionally does not -- breaks that invariant and MUST add a
+    # `fill!(out, 0.0)` here, or screened blocks will silently retain the
+    # caller's stale data.
+
     # Save a list containing the number of basis for each shell
     Nvals = num_basis.(BS.shells)
     Nmax = maximum(Nvals)
 
     # Get slice corresponding to the address in S where the compute chunk goes
-    ranges = UnitRange{Int64}[]
-    iaccum = 1
-    for i = 1:BS.nshells
-        push!(ranges, iaccum:(iaccum+ Nvals[i] -1))
-        iaccum += Nvals[i]
-    end
+    ao_offset = cumsum(Nvals) .- Nvals
+    ranges = [(ao_offset[i]+1):(ao_offset[i]+Nvals[i]) for i = 1:BS.nshells]
 
     # Find unique (i,j,k,l) combinations given permutational symmetry
-    unique_idx = NTuple{4,Int16}[]
-    N = Int16(BS.nshells - 1)
-    ZERO = zero(Int16)
-    for i = ZERO:N
-        for j = i:N
-            for k = ZERO:N
-                for l = k:N
-                    if index2(i,j) < index2(k,l)
-                        continue
-                    end
-                    push!(unique_idx, (i,j,k,l))
-                end
-            end
-        end
-    end
+    unique_idx = unique_ijkl(BS.nshells)
 
     # Initialize array for results
     allocate(body) = body(zeros(Cdouble, Nmax^4))
-    workerpool(allocate, unique_idx; chunksize=10) do (i,j,k,l), buf
-        # Shift indexes (C starts with 0, Julia 1)
-        id, jd, kd, ld = i+1, j+1, k+1, l+1
+    workerpool(allocate, unique_idx; chunksize=10) do (id,jd,kd,ld), buf
+        # unique_ijkl yields 1-based shell indexes; the symmetry bookkeeping
+        # below is written against libcint's 0-based convention.
+        i, j, k, l = id-1, jd-1, kd-1, ld-1
         Ni, Nj, Nk, Nl = Nvals[id], Nvals[jd], Nvals[kd], Nvals[ld]
 
         # Compute ERI

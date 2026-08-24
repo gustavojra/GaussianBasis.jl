@@ -50,6 +50,12 @@ end
 
 function ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet)
 
+    # NOTE: `out` is deliberately not zeroed -- the loops below cover every
+    # (i<=j, k) shell triple and mirror each block over μ↔ν, so every element
+    # is written and prior contents fully overwritten. Adding any skipping
+    # (e.g. shell-pair screening) requires a `fill!(out, 0.0)` first. Same
+    # invariant as ERI_2e4c!.
+
     # Pre compute number of basis per shell
     Nvals1 = num_basis.(BS1.shells)
     Nvals2 = num_basis.(BS2.shells)
@@ -95,12 +101,18 @@ function ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet)
     return out
 end
 
-function ERI_2e3c!(out, BS1::BasisSet{LCint}, BS2::BasisSet{LCint})
+function ERI_2e3c!(out, BS1::BasisSet{LCint}, BS2::BasisSet{LCint}; Bmerged::Union{Nothing,BasisSet}=nothing)
 
-    atoms = unique(vcat(BS1.atoms, BS2.atoms))
-    basis = vcat(BS1.shells, BS2.shells)
-
-    Bmerged = BasisSet("$(BS1.name*BS2.name)", atoms, basis)
+    # Bmerged depends only on BS1/BS2 -- callers making several calls against
+    # the same basis pair (e.g. this integral plus ∇ERI_2e3c!/∇2ERI_2e3c!
+    # over every atom, which take the same keyword) can build it once and
+    # pass it in rather than reconstructing it here each time. It's a small
+    # fraction of the runtime but over half of this function's allocation.
+    if Bmerged === nothing
+        atoms = unique(vcat(BS1.atoms, BS2.atoms))
+        basis = vcat(BS1.shells, BS2.shells)
+        Bmerged = BasisSet("$(BS1.name*BS2.name)", atoms, basis)
+    end
 
     # Pre compute number of basis per shell
     Nvals1 = num_basis.(BS1.shells)

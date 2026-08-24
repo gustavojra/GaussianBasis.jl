@@ -230,6 +230,35 @@ function unique_ij(imax::Integer, jmax::Integer = imax)
 end
 
 """
+    unique_ijkl(nshells::Integer) -> Vector{NTuple{4,Int16}}
+
+All shell quartets `(i,j,k,l)` (1-based) that are unique under the 8-fold
+permutational symmetry of `(ij|kl)`: `i <= j`, `k <= l`, and the composite
+bra index not below the ket index. This is the worklist `ERI_2e4c!`'s
+dense full-tensor build iterates over, computing each unique quartet once
+and scattering it to its symmetry images.
+
+Like [`unique_ij`](@ref), pre-sized rather than grown with `push!` -- the
+exact count is closed-form, `npair*(npair+1)/2` with
+`npair = nshells*(nshells+1)/2`, so no counting pass is needed. Elements
+are `Int16` (not `Int`): this list has `O(nshells^4)` entries and is the
+single largest auxiliary allocation in the dense build, so the narrower
+element type matters (4x smaller at equal length).
+"""
+function unique_ijkl(nshells::Integer)
+    npair = (nshells*(nshells+1)) ÷ 2
+    quartets = Vector{NTuple{4,Int16}}(undef, (npair*(npair+1)) ÷ 2)
+    n = 0
+    N = Int16(nshells)
+    for i = one(Int16):N, j = i:N, k = one(Int16):N, l = k:N
+        index2(i-one(Int16), j-one(Int16)) < index2(k-one(Int16), l-one(Int16)) && continue
+        n += 1
+        quartets[n] = (i, j, k, l)
+    end
+    return quartets
+end
+
+"""
     on_atom_flags(BS::BasisSet, iA::Int, shells...)
 
 Whether each of `shells` (any number of shell indices) sits on atom `iA`, as
