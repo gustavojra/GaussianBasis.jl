@@ -6,7 +6,7 @@ CurrentModule = GaussianBasis
 
 ## Four Centers
 
-For the atomic orbitals ``\chi_\mu, \chi_\nu, \chi_\lambda, \chi_\sigma``, the two-electron four-center repulsion integral, in chemist's notation, is calculated as:
+For the atomic orbitals ``\chi_\mu, \chi_\nu, \chi_\lambda, \chi_\sigma``, the two-electron four-center repulsion integral, in **chemist's notation**, is calculated as:
 
 ```math
 (\mu\nu|\lambda\sigma) = \iint \chi_\mu(\mathbf{r}_1)\chi_\nu(\mathbf{r}_1)\,
