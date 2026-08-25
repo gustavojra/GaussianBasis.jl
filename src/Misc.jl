@@ -236,6 +236,23 @@ function workerpool(work!, allocate, inputs; chunksize,ntasks = Threads.nthreads
 end
 
 """
+    merge_basis(BS1::BasisSet, BS2::BasisSet) -> BasisSet
+
+The concatenation of `BS1` and `BS2` into one `BasisSet` -- regular shells
+first, auxiliary second -- as libcint's 3-center kernels require, since they
+resolve all three shell indices against a single basis. An auxiliary shell
+`k` of `BS2` is therefore addressed as `k + BS1.nshells` in the result.
+
+Depends only on `BS1`/`BS2`, never on atoms or shells, so routines that take
+a `Bmerged` keyword should be handed one built once outside the loop.
+"""
+function merge_basis(BS1::BasisSet, BS2::BasisSet)
+    atoms = unique(vcat(BS1.atoms, BS2.atoms))
+    basis = vcat(BS1.shells, BS2.shells)
+    return BasisSet("$(BS1.name*BS2.name)", atoms, basis)
+end
+
+"""
     unique_ij(nshells::Integer) -> Vector{NTuple{2,Int16}}
 
 All shell pairs `(i,j)` with `1 <= i <= j <= nshells` -- the canonical

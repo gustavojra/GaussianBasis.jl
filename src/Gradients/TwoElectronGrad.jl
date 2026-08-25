@@ -659,9 +659,7 @@ function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA; Bmerged::Union{Noth
     # pass it in via this keyword instead of paying for a fresh BasisSet
     # construction on every call.
     if Bmerged === nothing
-        atoms = unique(vcat(BS1.atoms, BS2.atoms))
-        basis = vcat(BS1.shells, BS2.shells)
-        Bmerged = BasisSet("$(BS1.name*BS2.name)", atoms, basis)
+        Bmerged = merge_basis(BS1, BS2)
     end
 
     if size(out) != (BS1.nbas, BS1.nbas, BS2.nbas, 3)
