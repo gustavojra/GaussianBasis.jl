@@ -203,23 +203,21 @@ end
 function ∇2ERI_2e4c!(out, BS::BasisSet, Xflag::NTuple{4,Bool}, Yflag::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
     Ni = num_basis(BS.shells[i]); Nj = num_basis(BS.shells[j])
     Nk = num_basis(BS.shells[k]); Nl = num_basis(BS.shells[l])
-    # Only `buf` is used now; `t1`/`t2`/`shls` remain in the core's signature
-    # for callers that still pass them (see its docstring).
     buf = Vector{Cdouble}(undef, 9 * Ni * Nj * Nk * Nl)
-    return ∇2ERI_2e4c!(out, BS, Xflag, Yflag, i, j, k, l, buf, Cdouble[], Cdouble[], Cint[])
+    return ∇2ERI_2e4c!(out, BS, Xflag, Yflag, i, j, k, l, buf)
 end
 
 """
-    ∇2ERI_2e4c!(out, BS::BasisSet, Xflag, Yflag, i, j, k, l, buf, t1, t2, shls)
+    ∇2ERI_2e4c!(out, BS::BasisSet, Xflag, Yflag, i, j, k, l, buf)
 
-Scratch-buffer-accepting core: `buf`/`t1`/`t2` (each `>= 9*Nmax^4`, `Nmax`
-= the largest `num_basis` over any shell the caller will ever pass) and
-`shls` (length 4) are caller-owned and reused across every call instead of
-allocated fresh. Not thread-safe to share: each concurrent caller (e.g.
-each worker task) needs its own scratch buffers.
+Scratch-buffer-accepting core: `buf` (sized `>= 9*Nmax^4`, `Nmax` = the
+largest `num_basis` over any shell the caller will ever pass) is
+caller-owned and reused across every call instead of allocated fresh --
+zero-allocation, for callers in a hot per-quartet loop. Not thread-safe to
+share: each concurrent caller (e.g. each worker task) needs its own `buf`.
 """
 function ∇2ERI_2e4c!(out, BS::BasisSet, Xflag::NTuple{4,Bool}, Yflag::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int,
-                      buf::Vector{Cdouble}, t1::Vector{Cdouble}, t2::Vector{Cdouble}, shls::Vector{Cint})
+                      buf::Vector{Cdouble})
     # Up to 16 placements per shell quartet (4x4 posA/posB, against the
     # gradient's 4 branches), so anything allocated per placement is
     # multiplied accordingly -- this sits in Fermi.jl's Hessian inner loop.

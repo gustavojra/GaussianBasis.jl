@@ -283,32 +283,22 @@ end
 
 function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
     Ni, Nj, Nk, Nl = num_basis(BS.shells[i]), num_basis(BS.shells[j]), num_basis(BS.shells[k]), num_basis(BS.shells[l])
-    Nijkl = Ni*Nj*Nk*Nl
-    buf = zeros(Cdouble, 3*Nijkl)
-    tmp = zeros(Cdouble, 3*Nijkl)
-    shls = zeros(Cint, 4)
-    return ∇ERI_2e4c!(out, BS, on_A, i, j, k, l, buf, tmp, shls)
+    buf = Vector{Cdouble}(undef, 3*Ni*Nj*Nk*Nl)
+    return ∇ERI_2e4c!(out, BS, on_A, i, j, k, l, buf)
 end
 
 """
-    ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i, j, k, l, buf, tmp, shls)
+    ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i, j, k, l, buf)
 
 Scratch-buffer-accepting core: identical math to the 7-argument form above,
 but takes a caller-owned `buf` (sized `>= 3*Nmax^4`, `Nmax` = the largest
 `num_basis` over any shell the caller will ever pass) instead of allocating
-one fresh every call -- genuinely zero-allocation, for callers in a hot
-per-quartet loop. Not thread-safe to share: each concurrent caller (e.g.
-each worker task) needs its own `buf`.
-
-!!! note "`tmp` and `shls` are no longer used"
-    Both are ignored and retained only so existing call sites keep working.
-    `tmp` held a transposed copy for `permutedims!`, which the index maps
-    below replaced; `shls` held the 0-based shell indices, which
-    [`∇ERI_2e4c_μ!`](@ref) now builds as a stack-allocated `SVector`. Pass
-    empty vectors, or prefer the 7-argument form with your own `buf`.
+one fresh every call -- zero-allocation, for callers in a hot per-quartet
+loop. Not thread-safe to share: each concurrent caller (e.g. each worker
+task) needs its own `buf`.
 """
 function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int,
-                     buf::Vector{Cdouble}, tmp::Vector{Cdouble}, shls::Vector{Cint})
+                     buf::Vector{Cdouble})
     # Exists because this sits in the innermost loop of Fermi.jl's
     # integral-direct gradient (called once per (atom, canonical-quartet)
     # visit, millions of times for a real molecule) -- profiling found the
@@ -497,8 +487,6 @@ function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, 
     # it linearly. `tmp`/`shls` are ignored by that core (see its docstring)
     # but are still positional, so pass empty vectors.
     blkbuf = Vector{Cdouble}(undef, 3*Nmax^4)
-    tmp_unused = Cdouble[]
-    shls_unused = Cint[]
 
     # i,j,k,l => Shell indexes starting at one
     # I, J, K, L => AO indexes starting at one
@@ -530,7 +518,7 @@ function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, 
             # a minus sign.
             blk = reshape(view(blkbuf, 1:3*Nijkl), Ni, Nj, Nk, Nl, 3)
             ∇ERI_2e4c!(blk, BS, (in_A[i], in_A[j], in_A[k], in_A[l]),
-                       Int(i), Int(j), Int(k), Int(l), buf, tmp_unused, shls_unused)
+                       Int(i), Int(j), Int(k), Int(l), buf)
 
             ### This block aims to retrieve unique elements within buf and map them to AO indexes
             # is, js, ks, ls are indexes within the shell e.g. for a p shell is = (1, 2, 3)

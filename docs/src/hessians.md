@@ -196,7 +196,7 @@ julia> buf = Vector{Float64}(undef, 9*Nmax^4);
 
 julia> out = zeros(size(q));
 
-julia> ∇2ERI_2e4c!(out, bset, X, Y, 3, 3, 1, 1, buf, Float64[], Float64[], Int32[]);
+julia> ∇2ERI_2e4c!(out, bset, X, Y, 3, 3, 1, 1, buf);
 
 julia> out == q
 true
@@ -204,7 +204,7 @@ true
 
 ```@docs
 ∇2ERI_2e4c(::BasisSet, ::Int, ::Int, ::Int, ::Int, ::Int, ::Int)
-∇2ERI_2e4c!(::Any, ::BasisSet, ::NTuple{4,Bool}, ::NTuple{4,Bool}, ::Int, ::Int, ::Int, ::Int, ::Vector{Float64}, ::Vector{Float64}, ::Vector{Float64}, ::Vector{Int32})
+∇2ERI_2e4c!(::Any, ::BasisSet, ::NTuple{4,Bool}, ::NTuple{4,Bool}, ::Int, ::Int, ::Int, ::Int, ::Vector{Float64})
 ```
 
 ## Two-Electron Three Centers

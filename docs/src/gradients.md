@@ -378,7 +378,7 @@ wants the full dense array materialized:
 
 ```@docs
 ∇ERI_2e4c(::BasisSet, ::Int, ::Int, ::Int, ::Int, ::Int)
-∇ERI_2e4c!(::Any, ::BasisSet, ::NTuple{4,Bool}, ::Int, ::Int, ::Int, ::Int, ::Vector{Float64}, ::Vector{Float64}, ::Vector{Int32})
+∇ERI_2e4c!(::Any, ::BasisSet, ::NTuple{4,Bool}, ::Int, ::Int, ::Int, ::Int, ::Vector{Float64})
 ```
 
 ### Bare libcint primitives
