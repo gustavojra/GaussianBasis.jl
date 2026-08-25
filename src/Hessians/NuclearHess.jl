@@ -119,6 +119,19 @@ function ∇2nuclear(BS::BasisSet, iA, iB)
     return ∇2nuclear!(out, BS, iA, iB)
 end
 
+"""
+    ∇2nuclear!(out, BS::BasisSet, iA, iB)
+
+Mutating counterpart of [`∇2nuclear`](@ref): writes the dense
+`nbas × nbas × 3 × 3` Hessian into `out` instead of allocating it. `out` is
+zeroed first, so a reused buffer is safe.
+
+Assembles both contributions -- the piece with both derivatives on shell
+centers (summed over every nucleus) and the piece with at least one
+derivative on a moving nuclear charge (isolated one nucleus at a time
+through a repositionable point-charge operator, see
+[`∇2nuclear_rinv_μμ!`](@ref)).
+"""
 function ∇2nuclear!(out, BS::BasisSet, iA, iB)
 
     if size(out) != (BS.nbas, BS.nbas, 3, 3)

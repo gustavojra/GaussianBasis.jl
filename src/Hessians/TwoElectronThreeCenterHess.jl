@@ -30,11 +30,10 @@
 # axes of a CROSS kernel's raw output come out reversed from the naive
 # (position-1-component, position-2-component) expectation -- ipip-type
 # (same-shell) kernels need no such correction, since mixed partials of the
-# same point commute. eri3c_hess_kernel applies that correction
-# unconditionally (harmless no-op for the symmetric same-shell case,
-# mirroring Fermi.jl's eri_hess_kernel exactly) so every other function here
-# can assume normalized (position-1-component, position-2-component) axis
-# order without re-deriving the correction per call site.
+# same point commute. The primitives below hand back libcint's raw (q,p)
+# axis order unchanged -- see their docstring -- and `_acc3c!` applies the
+# correction as it accumulates, so the placement logic never has to
+# re-derive it per call site.
 #
 # Validated: ∇2FD_ERI_2e3c (central difference of the already-trusted
 # ∇ERI_2e3c), translational invariance (sum over all iB of the Hessian

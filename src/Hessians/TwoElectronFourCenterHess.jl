@@ -119,9 +119,9 @@ end
 
 # One (posA,posB) placement accumulated into `out`. Positions 1..4 map to the
 # four shell arguments (i,j,k,l). Replaces the former
-# eri_hess_same/eri_hess_cross pair *and* their permutedims!-based scratch
-# twins: one implementation now serves both the allocating and preallocated
-# entry points, so the placement algebra exists in exactly one place.
+# former same/cross helper pair *and* their permutedims!-based scratch twins:
+# one implementation now serves both the allocating and preallocated entry
+# points, so the placement algebra exists in exactly one place.
 @inline function _∇24c_place!(out, bufv, BS, i, j, k, l, N::NTuple{4,Int},
                               posA::Int, posB::Int)
     if posA == posB
