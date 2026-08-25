@@ -481,7 +481,13 @@ function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, 
     ∇y = sizehint!(Cdouble[], size_ub)
     ∇z = sizehint!(Cdouble[], size_ub)
 
-    buf = zeros(Cdouble, 3*Nmax^4)
+    buf = Vector{Cdouble}(undef, 3*Nmax^4)
+    # Block staging area for ∇ERI_2e4c!; contiguous so the emit loop can index
+    # it linearly. `tmp`/`shls` are ignored by that core (see its docstring)
+    # but are still positional, so pass empty vectors.
+    blkbuf = Vector{Cdouble}(undef, 3*Nmax^4)
+    tmp_unused = Cdouble[]
+    shls_unused = Cint[]
 
     # i,j,k,l => Shell indexes starting at one
     # I, J, K, L => AO indexes starting at one
@@ -499,38 +505,21 @@ function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, 
             Nijkl = Nijk*Nl
             ioff, joff, koff, loff = ao_offset[i], ao_offset[j], ao_offset[k], ao_offset[l]
 
-            # NOTE: Using loops instead of array operations could make this more efficient
-            # Compute ERI
-            bufx = zeros(Cdouble, Ni, Nj, Nk, Nl)
-            bufy = zeros(Cdouble, Ni, Nj, Nk, Nl)
-            bufz = zeros(Cdouble, Ni, Nj, Nk, Nl)
-            if in_A[i]
-                cint2e_ip1_sph!(buf, @SVector([i,j,k,l]), BS.lib)
-                bufx += reshape(buf[1:Nijkl], Ni, Nj, Nk, Nl)
-                bufy += reshape(buf[Nijkl+1:2*Nijkl], Ni, Nj, Nk, Nl)
-                bufz += reshape(buf[2*Nijkl+1:3*Nijkl], Ni, Nj, Nk, Nl)
-            end
-
-            if in_A[j]
-                cint2e_ip1_sph!(buf, @SVector([j,i,k,l]), BS.lib)
-                bufx += permutedims(reshape(buf[1:Nijkl],           Nj, Ni, Nk, Nl), (2,1,3,4))
-                bufy += permutedims(reshape(buf[Nijkl+1:2*Nijkl],   Nj, Ni, Nk, Nl), (2,1,3,4))
-                bufz += permutedims(reshape(buf[2*Nijkl+1:3*Nijkl], Nj, Ni, Nk, Nl), (2,1,3,4))
-            end
-
-            if in_A[k]
-                cint2e_ip1_sph!(buf, @SVector([k,l,i,j]), BS.lib)
-                bufx += permutedims(reshape(buf[1:Nijkl],           Nk, Nl, Ni, Nj), (3,4,1,2))
-                bufy += permutedims(reshape(buf[Nijkl+1:2*Nijkl],   Nk, Nl, Ni, Nj), (3,4,1,2))
-                bufz += permutedims(reshape(buf[2*Nijkl+1:3*Nijkl], Nk, Nl, Ni, Nj), (3,4,1,2))
-            end
-
-            if in_A[l]
-                cint2e_ip1_sph!(buf, @SVector([l,k,i,j]), BS.lib)
-                bufx += permutedims(reshape(buf[1:Nijkl],           Nl, Nk, Ni, Nj), (3,4,2,1))
-                bufy += permutedims(reshape(buf[Nijkl+1:2*Nijkl],   Nl, Nk, Ni, Nj), (3,4,2,1))
-                bufz += permutedims(reshape(buf[2*Nijkl+1:3*Nijkl], Nl, Nk, Ni, Nj), (3,4,2,1))
-            end
+            # One call to the shared shell-quartet core instead of
+            # re-implementing its four branches here. It writes a
+            # (Ni,Nj,Nk,Nl,3) block into `blkbuf`; because that view is
+            # contiguous, component q of the block occupies the linear range
+            # Nijkl*(q-1)+1 : q*Nijkl, so the emit loop below can index
+            # `blkbuf` directly with the same `is + bjkl` offsets the old
+            # bufx/bufy/bufz used.
+            #
+            # The core already folds libcint's sign flip into ∇ERI_2e4c_μ!,
+            # where the old code here accumulated raw kernel output and
+            # negated at push! time -- hence the pushes below no longer carry
+            # a minus sign.
+            blk = reshape(view(blkbuf, 1:3*Nijkl), Ni, Nj, Nk, Nl, 3)
+            ∇ERI_2e4c!(blk, BS, (in_A[i], in_A[j], in_A[k], in_A[l]),
+                       Int(i), Int(j), Int(k), Int(l), buf, tmp_unused, shls_unused)
 
             ### This block aims to retrieve unique elements within buf and map them to AO indexes
             # is, js, ks, ls are indexes within the shell e.g. for a p shell is = (1, 2, 3)
@@ -567,9 +556,10 @@ function ∇sparseERI_2e4c(BS::BasisSet, iA, cutoff = 1e-12; ij_vals = nothing, 
 
                             self_paired && IJ > KL && continue
 
-                            push!(∇x, -bufx[is + bjkl])
-                            push!(∇y, -bufy[is + bjkl])
-                            push!(∇z, -bufz[is + bjkl])
+                            n = is + bjkl
+                            push!(∇x, blkbuf[n])
+                            push!(∇y, blkbuf[Nijkl + n])
+                            push!(∇z, blkbuf[2*Nijkl + n])
                             push!(indexes, KL ≥ IJ ? (I, J, K, L) : (K, L, I, J))
                         end
                     end
