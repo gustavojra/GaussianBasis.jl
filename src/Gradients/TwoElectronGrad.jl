@@ -17,6 +17,17 @@ function ∇ERI_2e4c(BS::BasisSet, iA)
     return ∇ERI_2e4c!(out, BS, iA)
 end
 
+"""
+    ∇ERI_2e4c!(out, BS::BasisSet, iA)
+
+Mutating counterpart of [`∇ERI_2e4c`](@ref): writes the dense
+`nbas × nbas × nbas × nbas × 3` gradient into the caller-supplied `out`
+instead of allocating it.
+
+For a single shell quartet see
+[`∇ERI_2e4c(BS,iA,i,j,k,l)`](@ref ∇ERI_2e4c(::BasisSet, ::Int, ::Int, ::Int, ::Int, ::Int));
+for large basis sets prefer [`∇sparseERI_2e4c`](@ref).
+"""
 function ∇ERI_2e4c!(out, BS::BasisSet, iA)
 
     if size(out) != (BS.nbas, BS.nbas, BS.nbas, BS.nbas, 3)
@@ -630,6 +641,17 @@ function ∇ERI_2e3c_P!(out, BS::BasisSet{LCint}, i::Int, j::Int, k::Int)
     return out
 end
 
+"""
+    ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA; Bmerged=nothing)
+
+Mutating counterpart of [`∇ERI_2e3c`](@ref): writes the dense
+`BS1.nbas × BS1.nbas × BS2.nbas × 3` gradient into `out` instead of
+allocating it. `out` is zeroed first, so a reused buffer is safe.
+
+`Bmerged` depends only on `BS1`/`BS2`, never on `iA`. Callers looping over
+atoms should build it once and pass it in -- it is a small fraction of the
+runtime but over half of this routine's allocation.
+"""
 function ∇ERI_2e3c!(out, BS1::BasisSet, BS2::BasisSet, iA; Bmerged::Union{Nothing,BasisSet}=nothing)
 
     # Bmerged depends only on BS1/BS2, never on iA -- callers looping over
@@ -784,6 +806,13 @@ function ∇ERI_2e2c_μ!(out, BS::BasisSet{LCint}, i::Int, j::Int)
     return out
 end
 
+"""
+    ∇ERI_2e2c!(out, BS::BasisSet, iA)
+
+Mutating counterpart of [`∇ERI_2e2c`](@ref): writes the dense
+`nbas × nbas × 3` gradient of the DF Coulomb metric `(P|Q)` into `out`
+instead of allocating it. `out` is zeroed first, so a reused buffer is safe.
+"""
 function ∇ERI_2e2c!(out, BS::BasisSet, iA)
 
     if size(out) != (BS.nbas, BS.nbas, 3)

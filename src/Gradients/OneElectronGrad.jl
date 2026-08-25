@@ -468,18 +468,21 @@ end
 # (the bare, unchecked shell-differentiation primitive, e.g. `∇overlap_μ!`)
 # instead of a string, mirroring how `get_1e_matrix!` in
 # Integrals/OneElectron.jl takes a callback rather than branching on one.
-# Calls the BARE primitive (`∇overlap_μ!`/`∇kinetic_μ!`), not the safe,
-# bounds-checked `∇overlap!`/`∇kinetic!` shell-pair form -- going through
-# the safe form would pay for a fresh `buf` allocation on every call, where
-# this loop instead reuses one buffer per worker task across every shell
-# pair it handles (translational invariance also lets it skip same-atom
-# pairs and only visit Ashells×notAshells once, mirroring the rest via
-# transpose). Safe here because `i`/`j` are always drawn from this loop's
-# own bounded `Ashells`/`notAshells` and `buf` is sized from `Nmax` up
-# front, not because the callback validates anything itself. Nuclear isn't
-# wired through here at all: its three-loop structure amortizes the
-# `deepcopy`-based fudged nuclear-charge arrays once across every shell
-# pair, which this generic per-pair `callback` shape has no way to do.
+# Calls the BARE primitive (`∇overlap_μ!`/`∇kinetic_μ!`) rather than the
+# safe, bounds-checked `∇overlap!`/`∇kinetic!` shell-pair form: it skips the
+# per-pair `on_atom_flags`/size checks this loop has already established, and
+# never needs the shell-pair form's transposing branch, because it only ever
+# visits pairs with `i` on A -- so the differentiated shell is always
+# libcint's first argument and the (j,i) block comes free from the mirror in
+# the scatter. Translational invariance also lets it skip same-membership
+# pairs entirely and visit Ashells×notAshells once. Safe because `i`/`j` are
+# always drawn from this loop's own bounded `Ashells`/`notAshells` and `buf`
+# is sized from `Nmax` up front, not because the callback validates anything.
+#
+# Nuclear isn't wired through here: its per-pair rule needs TWO primitive
+# calls with DIFFERENT charge sets (see `∇nuclear!`), which this
+# single-callback shape cannot express, and none of its blocks are zero, so
+# it has no same-membership pairs to skip either.
 function ∇1e(callback, BS::BasisSet, A)
     out = zeros(BS.nbas, BS.nbas, 3)
     return ∇1e!(callback, out, BS, A)

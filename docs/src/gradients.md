@@ -318,6 +318,7 @@ julia> dropdims(dr, dims=(1,2)) # Shows derivatives along x, y, and z
 
 ```@docs
 ∇ERI_2e4c(::BasisSet, ::Any)
+∇ERI_2e4c!(::Any, ::BasisSet, ::Any)
 ∇sparseERI_2e4c
 ```
 
@@ -325,22 +326,78 @@ julia> dropdims(dr, dims=(1,2)) # Shows derivatives along x, y, and z
 
 ```@docs
 ∇ERI_2e3c(::BasisSet, ::BasisSet, ::Any)
+∇ERI_2e3c!
 ```
 
 ## Two-electron two centers
 
 ```@docs
 ∇ERI_2e2c(::BasisSet, ::Any)
+∇ERI_2e2c!(::Any, ::BasisSet, ::Any)
 ```
-### Shell-pair/shell-quartet-level primitives
+
+## Choosing a level
+
+Every gradient here comes in the same four levels, from most convenient to
+fastest. All of them ultimately go through the same libcint primitive, so
+they agree to the last bit -- they differ only in how much bookkeeping they
+do for you.
+
+| level | example | notes |
+|:------|:--------|:------|
+| dense, allocating | `∇overlap(bs, A)` | returns a fresh `nbas × nbas × 3` array |
+| dense, preallocated | `∇overlap!(out, bs, A)` | reuses `out`; zeroes it for you |
+| shell pair/quartet | `∇overlap!(out, bs, A, i, j)` | validates sizes, resolves shell membership, returns the free zero when the block vanishes |
+| bare primitive | `∇overlap_μ!(out, bs, i, j)` | one libcint call, no checks at all |
+
+Two things are worth knowing before dropping a level.
+
+**The dense drivers exploit symmetry that a per-pair loop must reproduce
+itself.** `S`, `T`, `V`, `(P|Q)` and `(μν|P)` are all symmetric under the
+bra-shell swap, so the dense builders visit only `i <= j` and write the
+mirror from the same block. A loop that calls the shell-pair form for every
+ordered `(i,j)` gets the right answer at twice the libcint cost, with
+nothing to warn it. Loop `i <= j` and mirror, and the shell-pair form costs
+essentially nothing over the dense driver (measured ~1.0x).
+
+**Hoistable state should be hoisted.** Several routines rebuild per-call
+state that depends only on the basis and the atom. Pass it in and the call
+becomes allocation-free:
+
+| routine | keyword | build it with |
+|:--------|:--------|:--------------|
+| `∇overlap!`, `∇kinetic!`, `∇nuclear!` (shell pair) | `scratch` | `Vector{Cdouble}(undef, 3*Nmax^2)` |
+| `∇nuclear!` (shell pair) | `charges` | [`nuclear_charge_sets`](@ref) |
+| `∇ERI_2e3c!` | `Bmerged` | merged `BasisSet` of the two bases |
+| `∇sparseERI_2e4c` | `ij_vals`, `σvals` | [`schwarz_bounds`](@ref) |
+
+### Shell-pair/shell-quartet-level forms
 
 For callers building an integral-direct gradient or CPHF loop that never
-wants the full dense array materialized, single-shell-pair (or
-shell-quartet) forms are also available:
+wants the full dense array materialized:
 
 ```@docs
 ∇ERI_2e4c(::BasisSet, ::Int, ::Int, ::Int, ::Int, ::Int)
 ∇ERI_2e4c!(::Any, ::BasisSet, ::NTuple{4,Bool}, ::Int, ::Int, ::Int, ::Int, ::Vector{Float64}, ::Vector{Float64}, ::Vector{Int32})
+```
+
+### Bare libcint primitives
+
+The lowest level. Each does exactly one libcint call and applies the sign
+flip to the nuclear-coordinate convention -- no bounds checking, no
+zero-block skipping, no output-size validation. Every one of them
+differentiates its **first** shell argument, so any other center is reached
+by passing that shell first and permuting the result yourself.
+
+```@docs
+∇overlap_μ!
+∇kinetic_μ!
+∇nuclear_μ!
+∇ERI_2e2c_μ!
+∇ERI_2e3c_μ!
+∇ERI_2e4c_μ!
+nuclear_charge_sets
+schwarz_bounds
 ```
 
 ## Example
