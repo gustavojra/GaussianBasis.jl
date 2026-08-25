@@ -44,27 +44,15 @@ overlap. Note also that the `x` sub-array is zero for shells on the same atom (s
     derivative, divide by `Molecules.bohr_to_angstrom` (≈0.529177 Å/bohr),
     i.e. multiply by ≈1.8897 bohr/Å.
 
-
-### Implementation Details
-
-Under the hood, for example in `libcint`, derivatives can only be calculated with respect to electronic coordinates. However, because basis functions depend only on the distance $(r_i - R_A)$, we can use $\partial/\partial R_A = -\partial/\partial r_i$ to get nuclear derivatives.
-
-An important property of nuclear derivatives is translational invariance. For an operator $\hat{O}$ independant of $R_A$, the derivative of its matrix element $O_{\mu\nu} = \langle \chi_\mu|\hat{O}|\chi_\nu\rangle$ satisfies
-
-```math
-\{\mu,\nu\} \in A \implies \frac{\partial{O_{\mu\nu}}}{\partial{R_A}} = \frac{\partial\langle \chi_\mu|}{\partial{R_A}}|\hat{O}|\chi_\nu\rangle + \langle \chi_\mu|\hat{O}|\frac{\partial\chi_\nu}{\partial{R_A}}\rangle = 0
-```
-
-
 ## Overlap
 
 The derivative of the overlap integral is defined as follows:
 
 ```math
-\frac{\partial S_{\mu\nu}}{\partial \mathbf{R}_A} = \frac{\partial\langle \chi_\mu | \chi_\nu \rangle}{\partial \mathbf{R}_A} =  \langle \frac{\partial \chi_\mu}{\partial \mathbf{R}_A} | \chi_\nu \rangle + \langle \chi_\mu | \frac{\chi_\nu}{\partial \mathbf{R}_A} \rangle
+\frac{\partial S_{\mu\nu}}{\partial \mathbf{R}_A} = \frac{\partial\langle \chi_\mu | \chi_\nu \rangle}{\partial \mathbf{R}_A} 
 ```
 
-If the shells are on the same atoms ($\mu, \nu \in A$) or if neither shell is on the atom ($\mu, \nu \notin A$), the derivative is exacly zero. Hence, even though two terms are shown above, only one term is non-zero. 
+If the shells are on the same atoms ($\mu, \nu \in A$) or if neither shell is on the atom ($\mu, \nu \notin A$), the derivative is exacly zero. 
 
 Functions follow the same pattern found in [One-Electron Integrals](@ref), except you must include a mandatory argument `A` which indicates the atom for each derivatives are evaluated.
 ```julia-repl

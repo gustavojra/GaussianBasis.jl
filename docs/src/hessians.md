@@ -327,5 +327,4 @@ and a second derivative applies two, which cancel.
 ∇2ERI_2e2c_μμ!
 ∇2ERI_2e3c_μμ!
 ∇2ERI_2e4c_μμ!
-merge_basis
 ```
