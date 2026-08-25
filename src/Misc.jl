@@ -1,3 +1,5 @@
+export merge_basis, on_atom_flags, atomic_orbital_amplitude
+
 function string_repr(B::SphericalShell)
     # Generate Unicode symbol for sub number
     l_sub = Char(0x2080 + B.l)
