@@ -274,48 +274,70 @@ function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k
         throw(DimensionMismatch("Size of the output array needs to be ($Ni, $Nj, $Nk, $Nl, 3)."))
     end
 
-    out .= 0.0
+    fill!(out, 0.0)
 
     Nijkl = Ni*Nj*Nk*Nl
     lib = BS.lib
     bufv = view(buf, 1:3*Nijkl)
-    tmpv = view(tmp, 1:3*Nijkl)
 
-    # [i'j|kl]
+    # Each branch subtracts a differently-permuted view of the same raw block.
+    # These used to go through permutedims! into `tmp`, which -- despite being
+    # the in-place form -- still allocates ~384 B per call, so a quartet hitting
+    # two branches cost 768 B even with caller-owned scratch, contradicting this
+    # method's whole reason for existing. Folding the permutation into the index
+    # expression removes both that allocation and the intermediate copy; `tmp`
+    # is consequently unused and kept only so existing call sites still work.
+    #
+    # Index maps below follow permutedims' convention, dest[j...] =
+    # src[j[invperm(perm)]...], with the raw block laid out in the shell order
+    # that branch passed to libcint.
+
+    # [i'j|kl] -- raw (Ni,Nj,Nk,Nl,3), no permutation
     if on_A[1]
         shls[1] = i-1; shls[2] = j-1; shls[3] = k-1; shls[4] = l-1
         cint2e_ip1_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
-        out .-= reshape(bufv, Ni, Nj, Nk, Nl, 3)
+        @inbounds for q = 1:3
+            oq = Nijkl*(q-1)
+            for d = 1:Nl, c = 1:Nk, b = 1:Nj, a = 1:Ni
+                out[a,b,c,d,q] -= bufv[oq + a + Ni*(b-1) + Ni*Nj*(c-1) + Ni*Nj*Nk*(d-1)]
+            end
+        end
     end
 
-    # [ij'|kl]
+    # [ij'|kl] -- raw (Nj,Ni,Nk,Nl,3), perm (2,1,3,4,5)
     if on_A[2]
         shls[1] = j-1; shls[2] = i-1; shls[3] = k-1; shls[4] = l-1
         cint2e_ip1_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
-        ∇q = reshape(bufv, Nj, Ni, Nk, Nl, 3)
-        dest = reshape(tmpv, Ni, Nj, Nk, Nl, 3)
-        permutedims!(dest, ∇q, (2,1,3,4,5))
-        out .-= dest
+        @inbounds for q = 1:3
+            oq = Nijkl*(q-1)
+            for d = 1:Nl, c = 1:Nk, b = 1:Nj, a = 1:Ni
+                out[a,b,c,d,q] -= bufv[oq + b + Nj*(a-1) + Nj*Ni*(c-1) + Nj*Ni*Nk*(d-1)]
+            end
+        end
     end
 
-    # [ij|k'l]
+    # [ij|k'l] -- raw (Nk,Nl,Ni,Nj,3), perm (3,4,1,2,5)
     if on_A[3]
         shls[1] = k-1; shls[2] = l-1; shls[3] = i-1; shls[4] = j-1
         cint2e_ip1_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
-        ∇q = reshape(bufv, Nk, Nl, Ni, Nj, 3)
-        dest = reshape(tmpv, Ni, Nj, Nk, Nl, 3)
-        permutedims!(dest, ∇q, (3,4,1,2,5))
-        out .-= dest
+        @inbounds for q = 1:3
+            oq = Nijkl*(q-1)
+            for d = 1:Nl, c = 1:Nk, b = 1:Nj, a = 1:Ni
+                out[a,b,c,d,q] -= bufv[oq + c + Nk*(d-1) + Nk*Nl*(a-1) + Nk*Nl*Ni*(b-1)]
+            end
+        end
     end
 
-    # [ij|kl']
+    # [ij|kl'] -- raw (Nl,Nk,Ni,Nj,3), perm (3,4,2,1,5)
     if on_A[4]
         shls[1] = l-1; shls[2] = k-1; shls[3] = i-1; shls[4] = j-1
         cint2e_ip1_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
-        ∇q = reshape(bufv, Nl, Nk, Ni, Nj, 3)
-        dest = reshape(tmpv, Ni, Nj, Nk, Nl, 3)
-        permutedims!(dest, ∇q, (3,4,2,1,5))
-        out .-= dest
+        @inbounds for q = 1:3
+            oq = Nijkl*(q-1)
+            for d = 1:Nl, c = 1:Nk, b = 1:Nj, a = 1:Ni
+                out[a,b,c,d,q] -= bufv[oq + d + Nl*(c-1) + Nl*Nk*(a-1) + Nl*Nk*Ni*(b-1)]
+            end
+        end
     end
 
     return out
