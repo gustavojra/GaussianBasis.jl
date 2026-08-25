@@ -41,7 +41,8 @@
 # point commute) needs no such correction.
 
 function eri_hess_kernel(kern, bset::BasisSet, a, b, c, d)
-    Na, Nb, Nc, Nd = num_basis.(bset.shells[[a, b, c, d]])
+    Na = num_basis(bset.shells[a]); Nb = num_basis(bset.shells[b])
+    Nc = num_basis(bset.shells[c]); Nd = num_basis(bset.shells[d])
     buf = zeros(Cdouble, 9 * Na * Nb * Nc * Nd)
     kern(buf, [a, b, c, d], bset.lib)
     return permutedims(reshape(buf, Na, Nb, Nc, Nd, 3, 3), (1, 2, 3, 4, 6, 5))
@@ -58,7 +59,8 @@ end
 # 4-branch case). `dest` must be sized `>= 9*Na*Nb*Nc*Nd`; returns a reshaped
 # view into it.
 function eri_hess_kernel!(buf::Vector{Cdouble}, dest::Vector{Cdouble}, shls::Vector{Cint}, kern, bset::BasisSet, a, b, c, d)
-    Na, Nb, Nc, Nd = num_basis.(bset.shells[[a, b, c, d]])
+    Na = num_basis(bset.shells[a]); Nb = num_basis(bset.shells[b])
+    Nc = num_basis(bset.shells[c]); Nd = num_basis(bset.shells[d])
     n = Na * Nb * Nc * Nd * 9
     shls[1] = a - 1; shls[2] = b - 1; shls[3] = c - 1; shls[4] = d - 1
     lib = bset.lib
@@ -114,7 +116,8 @@ function eri_hess_cross!(buf::Vector{Cdouble}, t1::Vector{Cdouble}, t2::Vector{C
                           bset::BasisSet, p, q, r, s, posA::Int, posB::Int)
     swp = posA > posB
     a, b = swp ? (posB, posA) : (posA, posB)
-    Np, Nq, Nr, Ns = num_basis.(bset.shells[[p, q, r, s]])
+    Np = num_basis(bset.shells[p]); Nq = num_basis(bset.shells[q])
+    Nr = num_basis(bset.shells[r]); Ns = num_basis(bset.shells[s])
     n = Np * Nq * Nr * Ns * 9
 
     d, dbuf = if (a, b) == (1, 2)
@@ -177,7 +180,8 @@ end
 # `eri_hess_cross!` has to `eri_hess_cross`.
 function eri_hess_same!(buf::Vector{Cdouble}, t1::Vector{Cdouble}, t2::Vector{Cdouble}, shls::Vector{Cint},
                          bset::BasisSet, p, q, r, s, posK::Int)
-    Np, Nq, Nr, Ns = num_basis.(bset.shells[[p, q, r, s]])
+    Np = num_basis(bset.shells[p]); Nq = num_basis(bset.shells[q])
+    Nr = num_basis(bset.shells[r]); Ns = num_basis(bset.shells[s])
     n = Np * Nq * Nr * Ns * 9
     if posK == 1
         return eri_hess_kernel!(buf, t1, shls, cint2e_ipip1_sph!, bset, p, q, r, s)
@@ -223,7 +227,8 @@ once outside a hot loop.
 function ∇2ERI_2e4c(BS::BasisSet, iA::Int, iB::Int, i::Int, j::Int, k::Int, l::Int)
     Xflag = on_atom_flags(BS, iA, i, j, k, l)
     Yflag = on_atom_flags(BS, iB, i, j, k, l)
-    Ni, Nj, Nk, Nl = num_basis.(BS.shells[[i, j, k, l]])
+    Ni = num_basis(BS.shells[i]); Nj = num_basis(BS.shells[j])
+    Nk = num_basis(BS.shells[k]); Nl = num_basis(BS.shells[l])
     out = zeros(Ni, Nj, Nk, Nl, 3, 3)
     (!any(Xflag) || !any(Yflag) || (iA == iB && all(Xflag))) && return out
     return ∇2ERI_2e4c!(out, BS, Xflag, Yflag, i, j, k, l)
@@ -240,13 +245,15 @@ function ∇2ERI_2e4c!(out, BS::BasisSet, iA::Int, iB::Int, i::Int, j::Int, k::I
 end
 
 function ∇2ERI_2e4c(BS::BasisSet, Xflag::NTuple{4,Bool}, Yflag::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
-    Ni, Nj, Nk, Nl = num_basis.(BS.shells[[i, j, k, l]])
+    Ni = num_basis(BS.shells[i]); Nj = num_basis(BS.shells[j])
+    Nk = num_basis(BS.shells[k]); Nl = num_basis(BS.shells[l])
     out = zeros(Ni, Nj, Nk, Nl, 3, 3)
     return ∇2ERI_2e4c!(out, BS, Xflag, Yflag, i, j, k, l)
 end
 
 function ∇2ERI_2e4c!(out, BS::BasisSet, Xflag::NTuple{4,Bool}, Yflag::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
-    Ni, Nj, Nk, Nl = num_basis.(BS.shells[[i, j, k, l]])
+    Ni = num_basis(BS.shells[i]); Nj = num_basis(BS.shells[j])
+    Nk = num_basis(BS.shells[k]); Nl = num_basis(BS.shells[l])
     Nijkl = Ni * Nj * Nk * Nl
     buf = zeros(Cdouble, 9 * Nijkl)
     t1 = zeros(Cdouble, 9 * Nijkl)
@@ -271,7 +278,8 @@ function ∇2ERI_2e4c!(out, BS::BasisSet, Xflag::NTuple{4,Bool}, Yflag::NTuple{4
     # branches), so the old allocating path cost proportionally more GC
     # churn per call -- see Gradients/TwoElectronGrad.jl's ∇ERI_2e4c! for
     # the analogous gradient-side fix.
-    Ni, Nj, Nk, Nl = num_basis.(BS.shells[[i, j, k, l]])
+    Ni = num_basis(BS.shells[i]); Nj = num_basis(BS.shells[j])
+    Nk = num_basis(BS.shells[k]); Nl = num_basis(BS.shells[l])
     if size(out) != (Ni, Nj, Nk, Nl, 3, 3)
         throw(DimensionMismatch("Size of the output array needs to be ($Ni, $Nj, $Nk, $Nl, 3, 3)."))
     end
