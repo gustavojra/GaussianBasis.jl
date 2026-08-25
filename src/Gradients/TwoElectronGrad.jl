@@ -202,6 +202,36 @@ end
 # [ij|kl']` formula is already well-defined for any `(i,j,k,l)` on its own.
 
 """
+    ∇ERI_2e4c_μ!(out, BS::BasisSet{LCint}, i::Int, j::Int, k::Int, l::Int)
+
+Libcint call for the 4-center ERI gradient block differentiated with respect
+to shell `i` (the "μ" shell), for shells `i,j,k,l` of `BS`, already
+sign-flipped to the nuclear-coordinate convention -- the direct analogue of
+[`∇overlap_μ!`](@ref), and the only place this file touches libcint.
+
+Always differentiates its FIRST shell argument. To differentiate any other
+center, pass that shell first and permute the result, exactly as the 1e
+gradients do with `∇overlap_μ!(out, BS, j, i)`. `out` comes back in
+libcint's raw `(Ni,Nj,Nk,Nl,3)` layout for the shell order **as passed**, so
+a permuted call returns a permuted block -- see `∇ERI_2e4c!` for the four
+index maps that fold those permutations into the scatter.
+
+Handles the 1-based to 0-based shell index conversion and passes the indices
+as an `SVector`, so no caller-owned `shls` buffer is needed and the call is
+allocation-free. `out` may be a contiguous view (e.g. `view(buf, 1:3*Nijkl)`).
+
+> No bounds checking, no zero-block skipping, no output-size validation --
+> same segfault/heap-corruption risks as [`∇overlap_μ!`](@ref).
+"""
+function ∇ERI_2e4c_μ!(out, BS::BasisSet{LCint}, i::Int, j::Int, k::Int, l::Int)
+    lib = BS.lib
+    cint2e_ip1_sph!(out, @SVector(Cint[i-1, j-1, k-1, l-1]),
+                    lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
+    out .*= -1.0
+    return out
+end
+
+"""
     ∇ERI_2e4c(BS::BasisSet, iA::Int, i::Int, j::Int, k::Int, l::Int)
     ∇ERI_2e4c(BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int)
 
@@ -253,20 +283,30 @@ end
     ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i, j, k, l, buf, tmp, shls)
 
 Scratch-buffer-accepting core: identical math to the 7-argument form above,
-but takes caller-owned `buf`/`tmp` (each sized `>= 3*Nmax^4`, `Nmax` = the
-largest `num_basis` over any shell the caller will ever pass) and `shls`
-(sized 4) instead of allocating them fresh every call -- zero-allocation,
-for callers in a hot per-quartet loop. Not thread-safe to share: each
-concurrent caller (e.g. each worker task) needs its own `buf`/`tmp`/`shls`.
+but takes a caller-owned `buf` (sized `>= 3*Nmax^4`, `Nmax` = the largest
+`num_basis` over any shell the caller will ever pass) instead of allocating
+one fresh every call -- genuinely zero-allocation, for callers in a hot
+per-quartet loop. Not thread-safe to share: each concurrent caller (e.g.
+each worker task) needs its own `buf`.
+
+!!! note "`tmp` and `shls` are no longer used"
+    Both are ignored and retained only so existing call sites keep working.
+    `tmp` held a transposed copy for `permutedims!`, which the index maps
+    below replaced; `shls` held the 0-based shell indices, which
+    [`∇ERI_2e4c_μ!`](@ref) now builds as a stack-allocated `SVector`. Pass
+    empty vectors, or prefer the 7-argument form with your own `buf`.
 """
 function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k::Int, l::Int,
                      buf::Vector{Cdouble}, tmp::Vector{Cdouble}, shls::Vector{Cint})
     # Exists because this sits in the innermost loop of Fermi.jl's
     # integral-direct gradient (called once per (atom, canonical-quartet)
     # visit, millions of times for a real molecule) -- profiling found the
-    # allocating form costing ~1.3 KB/call (a fresh buf, plus one
-    # allocating permutedims per non-first branch), several GB of GC churn
-    # over a full gradient. permutedims! (in-place) replaces permutedims.
+    # allocating form costing ~1.3 KB/call, several GB of GC churn over a
+    # full gradient. Note that permutedims! is NOT a fix for that: despite
+    # being the in-place form it still allocates ~384 B per call, so a
+    # quartet hitting two transposing branches leaked 768 B even with
+    # caller-owned buffers. Folding the permutations into the index
+    # expressions below is what actually makes this allocation-free.
 
     Ni, Nj, Nk, Nl = num_basis(BS.shells[i]), num_basis(BS.shells[j]), num_basis(BS.shells[k]), num_basis(BS.shells[l])
 
@@ -277,65 +317,58 @@ function ∇ERI_2e4c!(out, BS::BasisSet, on_A::NTuple{4,Bool}, i::Int, j::Int, k
     fill!(out, 0.0)
 
     Nijkl = Ni*Nj*Nk*Nl
-    lib = BS.lib
     bufv = view(buf, 1:3*Nijkl)
 
-    # Each branch subtracts a differently-permuted view of the same raw block.
-    # These used to go through permutedims! into `tmp`, which -- despite being
-    # the in-place form -- still allocates ~384 B per call, so a quartet hitting
-    # two branches cost 768 B even with caller-owned scratch, contradicting this
-    # method's whole reason for existing. Folding the permutation into the index
-    # expression removes both that allocation and the intermediate copy; `tmp`
-    # is consequently unused and kept only so existing call sites still work.
+    # Every branch is the same primitive, ∇ERI_2e4c_μ! -- which always
+    # differentiates its first shell argument -- called with the shell to be
+    # differentiated moved to the front. The resulting block therefore comes
+    # back permuted, and each branch folds that permutation into the index
+    # expression rather than materializing a transposed copy.
     #
-    # Index maps below follow permutedims' convention, dest[j...] =
+    # Index maps follow permutedims' convention, dest[j...] =
     # src[j[invperm(perm)]...], with the raw block laid out in the shell order
     # that branch passed to libcint.
 
     # [i'j|kl] -- raw (Ni,Nj,Nk,Nl,3), no permutation
     if on_A[1]
-        shls[1] = i-1; shls[2] = j-1; shls[3] = k-1; shls[4] = l-1
-        cint2e_ip1_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
+        ∇ERI_2e4c_μ!(bufv, BS, i, j, k, l)
         @inbounds for q = 1:3
             oq = Nijkl*(q-1)
             for d = 1:Nl, c = 1:Nk, b = 1:Nj, a = 1:Ni
-                out[a,b,c,d,q] -= bufv[oq + a + Ni*(b-1) + Ni*Nj*(c-1) + Ni*Nj*Nk*(d-1)]
+                out[a,b,c,d,q] += bufv[oq + a + Ni*(b-1) + Ni*Nj*(c-1) + Ni*Nj*Nk*(d-1)]
             end
         end
     end
 
     # [ij'|kl] -- raw (Nj,Ni,Nk,Nl,3), perm (2,1,3,4,5)
     if on_A[2]
-        shls[1] = j-1; shls[2] = i-1; shls[3] = k-1; shls[4] = l-1
-        cint2e_ip1_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
+        ∇ERI_2e4c_μ!(bufv, BS, j, i, k, l)
         @inbounds for q = 1:3
             oq = Nijkl*(q-1)
             for d = 1:Nl, c = 1:Nk, b = 1:Nj, a = 1:Ni
-                out[a,b,c,d,q] -= bufv[oq + b + Nj*(a-1) + Nj*Ni*(c-1) + Nj*Ni*Nk*(d-1)]
+                out[a,b,c,d,q] += bufv[oq + b + Nj*(a-1) + Nj*Ni*(c-1) + Nj*Ni*Nk*(d-1)]
             end
         end
     end
 
     # [ij|k'l] -- raw (Nk,Nl,Ni,Nj,3), perm (3,4,1,2,5)
     if on_A[3]
-        shls[1] = k-1; shls[2] = l-1; shls[3] = i-1; shls[4] = j-1
-        cint2e_ip1_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
+        ∇ERI_2e4c_μ!(bufv, BS, k, l, i, j)
         @inbounds for q = 1:3
             oq = Nijkl*(q-1)
             for d = 1:Nl, c = 1:Nk, b = 1:Nj, a = 1:Ni
-                out[a,b,c,d,q] -= bufv[oq + c + Nk*(d-1) + Nk*Nl*(a-1) + Nk*Nl*Ni*(b-1)]
+                out[a,b,c,d,q] += bufv[oq + c + Nk*(d-1) + Nk*Nl*(a-1) + Nk*Nl*Ni*(b-1)]
             end
         end
     end
 
     # [ij|kl'] -- raw (Nl,Nk,Ni,Nj,3), perm (3,4,2,1,5)
     if on_A[4]
-        shls[1] = l-1; shls[2] = k-1; shls[3] = i-1; shls[4] = j-1
-        cint2e_ip1_sph!(bufv, shls, lib.atm, lib.natm, lib.bas, lib.nbas, lib.env)
+        ∇ERI_2e4c_μ!(bufv, BS, l, k, i, j)
         @inbounds for q = 1:3
             oq = Nijkl*(q-1)
             for d = 1:Nl, c = 1:Nk, b = 1:Nj, a = 1:Ni
-                out[a,b,c,d,q] -= bufv[oq + d + Nl*(c-1) + Nl*Nk*(a-1) + Nl*Nk*Ni*(b-1)]
+                out[a,b,c,d,q] += bufv[oq + d + Nl*(c-1) + Nl*Nk*(a-1) + Nl*Nk*Ni*(b-1)]
             end
         end
     end
