@@ -215,6 +215,7 @@ properly, so they always thread.
 """
 const THREADING_THRESHOLD_1E = 2_000
 
+
 # adapted from https://juliafolds.github.io/data-parallelism/tutorials/concurrency-patterns/
 function workerpool(work!, allocate, inputs; chunksize,ntasks = Threads.nthreads())
     requests = Channel{Vector{eltype(inputs)}}(Inf)

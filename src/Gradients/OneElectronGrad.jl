@@ -39,19 +39,7 @@ function ∇overlap_μ!(out, BS::BasisSet{LCint}, i::Int, j::Int)
 end
 
 """
-    ∇overlap_ν!(out, BS::BasisSet{LCint}, i::Int, j::Int)
-
-Same as [`∇overlap_μ!`](@ref), differentiated with respect to shell `j`
-(the "ν" AO) instead of `i`. Same lack of bounds checking applies.
-"""
-function ∇overlap_ν!(out, BS::BasisSet{LCint}, i::Int, j::Int)
-    cint1e_ipovlp_sph!(out, @SVector([j, i]), BS.lib)
-    out .*= -1.0
-    return out
-end
-
-"""
-    ∇overlap!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int)
+    ∇overlap!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int; scratch=nothing)
     ∇overlap!(out, BS::BasisSet, A)
 
 Mutating counterpart of [`∇overlap`](@ref): writes into the caller-supplied
@@ -71,13 +59,18 @@ for gradients.
     for shells `i,j` of `BS` (shell indices, not AO indices).
   - `∇overlap!(out, BS, A)`: `out` must be a dense `nbas × nbas × 3`
     array.
+
+The shell-pair form needs a `3*Ni*Nj` scratch vector whenever the
+derivative falls on shell `j` (see below). It allocates one per call unless
+you pass `scratch`; in a loop over shell pairs, hand it a buffer sized from
+`3*Nmax^2` to make the call allocation-free.
 """
-function ∇overlap!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int)
+function ∇overlap!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int; scratch=nothing)
 
     i_on_A, j_on_A = GaussianBasis.on_atom_flags(BS, A, i, j)
 
     if i_on_A == j_on_A
-        out .= 0.0
+        fill!(out, 0.0)
         return out
     end
 
@@ -94,14 +87,17 @@ function ∇overlap!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int)
         # so write straight into `out`, no intermediate buffer needed.
         ∇overlap_μ!(out, BS, i, j)
     else
-        # Derivative lands on shell j (the one on atom A); compute via [j,i]
-        # (j as the differentiated, first, shell) -- raw libcint output is
-        # (Nj,Ni,3) in memory, so transpose the first two axes back to
-        # (Ni,Nj,3) AO order. S is symmetric, so ∂S_ij/∂R_A = ∂S_ji/∂R_A
-        # transposed, same trick `∇1e!` uses for its off-diagonal mirror.
-        buf = zeros(Cdouble, 3*Ni*Nj)
-        ∇overlap_ν!(buf, BS, i, j)
-        out .= permutedims(reshape(buf, Nj, Ni, 3), (2,1,3))
+        # Derivative lands on shell j. `∇overlap_μ!` always differentiates its
+        # FIRST shell argument, so swap them -- that hands back a (Nj,Ni,3)
+        # block, transposed here into `out`'s (Ni,Nj,3) AO order. S is
+        # symmetric, so ∂S_ij/∂R_A = (∂S_ji/∂R_A)ᵀ over the two AO axes.
+        buf = scratch === nothing ? Vector{Cdouble}(undef, 3*Ni*Nj) : scratch
+        length(buf) >= 3*Ni*Nj ||
+            throw(DimensionMismatch("scratch must hold at least $(3*Ni*Nj) elements"))
+        ∇overlap_μ!(buf, BS, j, i)
+        @inbounds for k = 1:3, js = 1:Nj, is = 1:Ni
+            out[is, js, k] = buf[js + Nj*(is-1) + Nj*Ni*(k-1)]
+        end
     end
     return out
 end
@@ -157,19 +153,7 @@ function ∇kinetic_μ!(out, BS::BasisSet{LCint}, i::Int, j::Int)
 end
 
 """
-    ∇kinetic_ν!(out, BS::BasisSet{LCint}, i::Int, j::Int)
-
-Same as [`∇kinetic_μ!`](@ref), differentiated with respect to shell `j`
-(the "ν" AO) instead of `i`. Same lack of bounds checking applies.
-"""
-function ∇kinetic_ν!(out, BS::BasisSet{LCint}, i::Int, j::Int)
-    cint1e_ipkin_sph!(out, @SVector([j, i]), BS.lib)
-    out .*= -1.0
-    return out
-end
-
-"""
-    ∇kinetic!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int)
+    ∇kinetic!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int; scratch=nothing)
     ∇kinetic!(out, BS::BasisSet, A)
 
 Mutating counterpart of [`∇kinetic`](@ref): writes into the caller-supplied
@@ -186,13 +170,16 @@ for gradients.
     for shells `i,j` of `BS` (shell indices, not AO indices).
   - `∇kinetic!(out, BS, A)`: `out` must be a dense `nbas × nbas × 3`
     array.
+
+As with [`∇overlap!`](@ref), the shell-pair form takes an optional
+`scratch` vector (`>= 3*Ni*Nj` elements) to stay allocation-free in a loop.
 """
-function ∇kinetic!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int)
+function ∇kinetic!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int; scratch=nothing)
 
     i_on_A, j_on_A = GaussianBasis.on_atom_flags(BS, A, i, j)
 
     if i_on_A == j_on_A
-        out .= 0.0
+        fill!(out, 0.0)
         return out
     end
 
@@ -209,14 +196,16 @@ function ∇kinetic!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int)
         # so write straight into `out`, no intermediate buffer needed.
         ∇kinetic_μ!(out, BS, i, j)
     else
-        # Derivative lands on shell j (the one on atom A); compute via [j,i]
-        # (j as the differentiated, first, shell) -- raw libcint output is
-        # (Nj,Ni,3) in memory, so transpose the first two axes back to
-        # (Ni,Nj,3) AO order. T is symmetric, so ∂T_ij/∂R_A = ∂T_ji/∂R_A
-        # transposed, same trick `∇1e!` uses for its off-diagonal mirror.
-        buf = zeros(Cdouble, 3*Ni*Nj)
-        ∇kinetic_ν!(buf, BS, i, j)
-        out .= permutedims(reshape(buf, Nj, Ni, 3), (2,1,3))
+        # Derivative lands on shell j -- swap the arguments so the
+        # differentiated shell is first, then transpose the (Nj,Ni,3) result
+        # into `out`. See `∇overlap!` for the full reasoning.
+        buf = scratch === nothing ? Vector{Cdouble}(undef, 3*Ni*Nj) : scratch
+        length(buf) >= 3*Ni*Nj ||
+            throw(DimensionMismatch("scratch must hold at least $(3*Ni*Nj) elements"))
+        ∇kinetic_μ!(buf, BS, j, i)
+        @inbounds for k = 1:3, js = 1:Nj, is = 1:Ni
+            out[is, js, k] = buf[js + Nj*(is-1) + Nj*Ni*(k-1)]
+        end
     end
     return out
 end
@@ -574,6 +563,12 @@ function ∇1e!(callback, out, BS::BasisSet, A)
         throw(DimensionMismatch("Size of the output array needs to be (nbas, nbas, 3)"))
     end
 
+    # Blocks with both shells on A (or both off it) are identically zero and
+    # are never visited below, so `out` must start clean -- otherwise a reused
+    # buffer keeps its old contents there, which is exactly the case this
+    # mutating form exists to serve.
+    fill!(out, 0.0)
+
     atomA = BS.atoms[A]
 
     # Shell indexes for basis in the atom A
@@ -592,31 +587,57 @@ function ∇1e!(callback, out, BS::BasisSet, A)
     ao_offset = cumsum(Nvals) .- Nvals
     Nmax = maximum(Nvals)
 
-    allocate(body) = body(zeros(Cdouble, 3*Nmax^2))
-    workerpool(allocate, Ashells; chunksize = 1) do i, buf
-        @inbounds begin
-            Ni = Nvals[i]
-            ioff = ao_offset[i]
-            for j in notAshells
-                Nj = Nvals[j]
-                joff = ao_offset[j]
-                Nij = Ni*Nj
-                # Call the bare shell-differentiation primitive
-                callback(buf, BS, i, j)
-                I = (ioff+1):(ioff+Ni)
-                J = (joff+1):(joff+Nj)
-
-                # Get strides for each cartesian
-                for k in 1:3
-                    r = (1+Nij*(k-1)):(k*Nij)
-                    @views ∇k = buf[r]
-                    out[I,J,k] .+= reshape(∇k, Ni, Nj)
-                end
-
-                # Copy over the transpose
-                out[J,I,:] .+= permutedims(out[I,J,:], (2,1,3))
-            end
-        end #inbounds
+    # Deliberately serial, and thread-safe as a result: a single call is far too
+    # small to thread profitably, and its parallelism is capped by |Ashells|
+    # (typically 5-15) no matter how many threads exist. Measured medians on 24
+    # cores, serial vs a workerpool over Ashells (us):
+    #
+    #   work     |   216 |   840 |  4872 | 19800 | 25920 | 57240 | 95700
+    #   serial   |  12.2 |  30.3 | 156.5 | 297.0 | 489.7 |1657.0 |2102.4
+    #   threaded | 132.7 | 104.3 | 251.6 | 333.5 | 490.6 | 862.4 | 958.2
+    #
+    # (work = output elements written = 6*nbas_on_A*(nbas - nbas_on_A).)
+    # Threading only pays past ~350 basis functions, and even then the threaded
+    # path is bimodal where the serial one is jitter-free -- minimum-of-N
+    # timings flatter it badly. Since a real gradient loops over every atom
+    # anyway, and atoms are independent and write disjoint outputs, the useful
+    # parallelism lives in that outer loop: callers should thread over atoms
+    # and call this per atom.
+    buf = Vector{Cdouble}(undef, 3*Nmax^2)
+    for i in Ashells
+        _scatter_∇1e!(callback, out, BS, i, notAshells, buf, Nvals, ao_offset)
     end
     return out
+end
+
+# One shell `i` on atom A against every shell off it: evaluate each pair into
+# `buf` and scatter the block plus its (j,i) mirror. Shared by the serial and
+# threaded paths above so the two cannot drift apart.
+function _scatter_∇1e!(callback, out, BS, i, notAshells, buf, Nvals, ao_offset)
+    @inbounds begin
+        Ni = Nvals[i]
+        ioff = ao_offset[i]
+        for j in notAshells
+            Nj = Nvals[j]
+            joff = ao_offset[j]
+            Nij = Ni*Nj
+            # Call the bare shell-differentiation primitive. `i` is on A, so
+            # it is the differentiated (first) shell and the raw buffer is
+            # already (Ni,Nj,3) in memory.
+            callback(buf, BS, i, j)
+
+            # Scatter the block and its (j,i) mirror in one scalar pass.
+            # The mirror's transpose costs nothing here -- it is just the
+            # swapped index expression -- so no permutedims and no
+            # range-indexed temporaries are needed.
+            for k in 1:3
+                base = Nij*(k-1)
+                for js = 1:Nj, is = 1:Ni
+                    v = buf[base + is + Ni*(js-1)]
+                    out[ioff+is, joff+js, k] = v
+                    out[joff+js, ioff+is, k] = v
+                end
+            end
+        end
+    end
 end
