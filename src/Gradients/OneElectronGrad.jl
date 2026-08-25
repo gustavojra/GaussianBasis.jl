@@ -276,19 +276,32 @@ function ∇nuclear_μ!(out, BS::BasisSet{LCint}, charge_atm, i::Int, j::Int)
 end
 
 """
-    ∇nuclear_ν!(out, BS::BasisSet{LCint}, charge_atm, i::Int, j::Int)
+    nuclear_charge_sets(BS::BasisSet{LCint}, A::Int) -> (only_A, no_A)
 
-Same as [`∇nuclear_μ!`](@ref), differentiated with respect to shell `j`
-(the "ν" AO) instead of `i`. Same lack of bounds checking applies.
+The two charge-fudged copies of `BS.lib.atm` that the nuclear gradient needs:
+`only_A` keeps atom `A`'s nuclear charge and zeroes every other, `no_A` does
+the reverse. Passing either to [`∇nuclear_μ!`](@ref) restricts the potential
+`Zc/|r-Rc|` it differentiates to that subset of nuclei.
+
+Depends only on `BS` and `A`, never on the shell pair, so callers looping
+over shell pairs for one atom should build it once and pass it through
+`∇nuclear!`'s `charges` keyword instead of paying for it per call.
 """
-function ∇nuclear_ν!(out, BS::BasisSet{LCint}, charge_atm, i::Int, j::Int)
-    cint1e_ipnuc_sph!(out, @SVector(Cint[j-1, i-1]), charge_atm, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
-    out .*= -1.0
-    return out
+function nuclear_charge_sets(BS::BasisSet{LCint}, A::Int)
+    only_A = copy(BS.lib.atm)
+    no_A   = copy(BS.lib.atm)
+    @inbounds for k in eachindex(BS.atoms)
+        if k == A
+            no_A[1 + 6*(k-1)] = 0
+        else
+            only_A[1 + 6*(k-1)] = 0
+        end
+    end
+    return only_A, no_A
 end
 
 """
-    ∇nuclear!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int)
+    ∇nuclear!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int; scratch=nothing, charges=nothing)
     ∇nuclear!(out, BS::BasisSet, A)
 
 Mutating counterpart of [`∇nuclear`](@ref): writes into the caller-supplied
@@ -296,19 +309,21 @@ Mutating counterpart of [`∇nuclear`](@ref): writes into the caller-supplied
 full-tensor form builds on. Unlike `∇overlap!`/`∇kinetic!`, no case is ever
 a free/skippable zero: `V_ij` sums the potential over every nucleus, so
 even a shell pair with neither `i` nor `j` on atom `A` still has a
-nonzero derivative through the `Z_A/|r-R_A|` operator term itself
-moving. `K_A(i,j)`/`K_notA(i,j)` below are the bra-derivative
-`cint1e_ipnuc_sph!` kernel at shell pair `(i,j)` using only atom `A`'s
-charge / every charge except `A`'s:
+nonzero derivative through the `Z_A/|r-R_A|` operator term itself moving.
 
-  - `i,j` both on `A`:    `K_notA(i,j) + K_notA(j,i)ᵀ`
-  - `i,j` both off `A`:    `-K_A(i,j) - K_A(j,i)ᵀ`
-  - `i` on `A`, `j` off:    `K_notA(i,j) - K_A(j,i)ᵀ`
-  - `i` off `A`, `j` on:     `-K_A(i,j) + K_notA(j,i)ᵀ`
+Every case reduces to the same two-term rule. Writing `K_X(p,q)` for
+[`∇nuclear_μ!`](@ref) -- the kernel differentiated w.r.t. its FIRST shell
+argument, over the nuclei that `X` leaves un-zeroed -- and assigning each
+shell a `(sign, charge set)` of `(+, no_A)` when it sits on `A` and
+`(-, only_A)` when it does not:
 
-(transpose over the two AO axes, per Cartesian direction). Prefer the
-whole-array form when you need many shell pairs for the same atom -- this
-one rebuilds the fudged nuclear-charge arrays on every call.
+    out = s_i * K_{X_i}(i,j)  +  s_j * K_{X_j}(j,i)ᵀ
+
+(transpose over the two AO axes, per Cartesian direction). Expanding the
+four on/off combinations recovers the familiar cases, e.g. `i,j` both on
+`A` gives `K_notA(i,j) + K_notA(j,i)ᵀ`, and both off gives
+`-K_A(i,j) - K_A(j,i)ᵀ`. Both terms are the *same* primitive, differing only
+in argument order and which charge set is passed.
 
 Only implemented for the `LCint` backend -- there is no `ACSint` fallback
 for gradients.
@@ -319,8 +334,15 @@ for gradients.
     for shells `i,j` of `BS` (shell indices, not AO indices).
   - `∇nuclear!(out, BS, A)`: `out` must be a dense `nbas × nbas × 3`
     array.
+
+In a loop over shell pairs, pass `charges` (from
+[`nuclear_charge_sets`](@ref), which depends only on `BS`/`A`) and a
+`scratch` vector of at least `3*Ni*Nj` elements; the call is then
+allocation-free. Without them it rebuilds both charge arrays and a scratch
+buffer every time.
 """
-function ∇nuclear!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int; scratch=nothing)
+function ∇nuclear!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int;
+                   scratch=nothing, charges=nothing)
     i_on_A, j_on_A = GaussianBasis.on_atom_flags(BS, A, i, j)
     Ni = num_basis(BS[i])
     Nj = num_basis(BS[j])
@@ -329,31 +351,23 @@ function ∇nuclear!(out, BS::BasisSet{LCint}, A::Int, i::Int, j::Int; scratch=n
         throw(DimensionMismatch("Size of the output array needs to be ($Ni, $Nj, 3)"))
     end
 
-    only_A = deepcopy(BS.lib.atm)
-    no_A = deepcopy(BS.lib.atm)
-    for k in eachindex(BS.atoms)
-        if k == A
-            no_A[1 + 6*(k-1)] = 0
-        else
-            only_A[1 + 6*(k-1)] = 0
-        end
-    end
+    only_A, no_A = charges === nothing ? nuclear_charge_sets(BS, A) : charges
 
-    if i_on_A && j_on_A
-        if scratch === nothing
-            scratch = zeros(Ni, Nj, 3)
-        end
-        ∇nuclear_ν!(scratch, BS, no_A, i, j)
-        out .+= permutedims(reshape(scratch, Nj, Ni, 3), (2,1,3))
-        ∇nuclear_μ!(scratch, BS, no_A, i, j)
-        out .+= reshape(scratch, Ni, Nj, 3)
-        #out .= _nuc_pair_kernel(BS, no_A, i, j) .+ permutedims(_nuc_pair_kernel(BS, no_A, j, i), (2,1,3))
-    elseif !i_on_A && !j_on_A
-        out .= .-(_nuc_pair_kernel(BS, only_A, i, j) .+ permutedims(_nuc_pair_kernel(BS, only_A, j, i), (2,1,3)))
-    elseif i_on_A && !j_on_A
-        out .= _nuc_pair_kernel(BS, no_A, i, j) .- permutedims(_nuc_pair_kernel(BS, only_A, j, i), (2,1,3))
-    else # !i_on_A && j_on_A
-        out .= .-_nuc_pair_kernel(BS, only_A, i, j) .+ permutedims(_nuc_pair_kernel(BS, no_A, j, i), (2,1,3))
+    # Term differentiated w.r.t. shell i -- libcint's [i,j] layout is already
+    # out's (Ni,Nj,3), so this writes straight in (and overwrites whatever was
+    # there, so a reused `out` needs no zeroing).
+    ∇nuclear_μ!(out, BS, i_on_A ? no_A : only_A, i, j)
+    i_on_A || (out .*= -1.0)
+
+    # Term differentiated w.r.t. shell j -- same primitive with the arguments
+    # swapped, which returns a (Nj,Ni,3) block; transpose it in as we add.
+    buf = scratch === nothing ? Vector{Cdouble}(undef, 3*Ni*Nj) : scratch
+    length(buf) >= 3*Ni*Nj ||
+        throw(DimensionMismatch("scratch must hold at least $(3*Ni*Nj) elements"))
+    ∇nuclear_μ!(buf, BS, j_on_A ? no_A : only_A, j, i)
+    sj = j_on_A ? 1.0 : -1.0
+    @inbounds for k = 1:3, js = 1:Nj, is = 1:Ni
+        out[is, js, k] += sj * buf[js + Nj*(is-1) + Nj*Ni*(k-1)]
     end
     return out
 end
@@ -363,22 +377,6 @@ function ∇nuclear(BS::BasisSet, A::Int, i::Int, j::Int)
     Nj = num_basis(BS[j])
     out = zeros(Ni, Nj, 3)
     return ∇nuclear!(out, BS, A, i, j)
-end
-
-# Bra-derivative cint1e_ipnuc_sph! kernel at shell pair (i,j), using a
-# caller-supplied (possibly charge-fudged) atm array -- now a thin wrapper
-# around ∇nuclear_μ!, which every call site here already matches (they get
-# the "differentiated w.r.t. the FIRST shell argument" convention by
-# swapping i,j themselves before calling). Kept only so ∇nuclear!'s branches
-# below don't need touching yet; the goal is to inline ∇nuclear_μ!/
-# ∇nuclear_ν! directly at each call site (mirroring ∇overlap!/∇kinetic!)
-# and drop this wrapper entirely.
-function _nuc_pair_kernel(BS::BasisSet{LCint}, charge_atm, i::Int, j::Int)
-    Ni = num_basis(BS[i])
-    Nj = num_basis(BS[j])
-    out = zeros(Cdouble, Ni, Nj, 3)
-    ∇nuclear_μ!(out, BS, charge_atm, i, j)
-    return out
 end
 
 """
@@ -405,125 +403,55 @@ function ∇nuclear(BS::BasisSet, A)
     return ∇nuclear!(out, BS, A)
 end
 
-function ∇nuclear!(out, BS::BasisSet, A)
+function ∇nuclear!(out, BS::BasisSet{LCint}, A)
 
     if size(out) != (BS.nbas, BS.nbas, 3)
         throw(DimensionMismatch("Size of the output array needs to be (nbas, nbas, 3)"))
     end
 
-    atomA = BS.atoms[A]
-
-    # Fudge lc_atoms
-    only_A = deepcopy(BS.lib.atm)
-    no_A = deepcopy(BS.lib.atm)
-    for k = eachindex(BS.atoms)
-        if k == A
-            no_A[1 + 6*(k-1)] = 0
-            continue
-        end
-        only_A[1 + 6*(k-1)] = 0
-    end
-
-    # Shell indexes for basis in the atom A (C notation: Starts from 0)
-    Ashells = Int[]
-    notAshells = Int[]
-    for i in 1:BS.nshells
-        b = BS.shells[i]
-        if b.atom == atomA
-            push!(Ashells, i)
-        else
-            push!(notAshells, i)
-        end
-    end
-
     Nvals = num_basis.(BS.shells)
     ao_offset = cumsum(Nvals) .- Nvals
     Nmax = maximum(Nvals)
-    # i ∉ A & j ∉ A
-    allocate(body) = body(zeros(Cdouble, 3*Nmax^2))
-    workerpool(allocate, notAshells; chunksize = 1) do i, buf
-        @inbounds begin
-            Ni = Nvals[i]
-            ioff = ao_offset[i]
-            I = (ioff+1):(ioff+Ni)
-            for j in notAshells
-                Nj = Nvals[j]
-                Nij = Ni*Nj
-                joff = ao_offset[j]
-                J = (joff+1):(joff+Nj)
 
-                # + ⟨i'|Va|j⟩ + ⟨i|Va|j'⟩   (Note that Va is the potential of the nuclei A alone!!)
-                cint1e_ipnuc_sph!(buf, @SVector(Cint[i-1,j-1]), only_A, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
+    # Depends only on BS/A -- built once here rather than per shell pair.
+    only_A, no_A = nuclear_charge_sets(BS, A)
 
-                # Get strides for each cartesian
-                for k in 1:3
-                    r = (1+Nij*(k-1)):(k*Nij)
-                    ∇k = reshape(buf[r], Int(Ni), Int(Nj))
-                    out[I,J,k] .+= ∇k  # ⟨i'|Va|j ⟩
+    # Serial, like ∇1e! and for the same reasons (see its comment): a single
+    # call is too small to thread profitably, and callers wanting parallelism
+    # should thread over atoms, which are independent and write disjoint
+    # outputs. Being serial also makes this trivially thread-safe to call
+    # from such an outer loop.
+    bufi = Vector{Cdouble}(undef, 3*Nmax^2)
+    bufj = Vector{Cdouble}(undef, 3*Nmax^2)
+
+    # V is symmetric, so dV_ij/dR_A = (dV_ji/dR_A)^T -- visit each unordered
+    # shell pair once and mirror. Every block uses the same two-term rule as
+    # the shell-pair form above: one call to the primitive per shell, with the
+    # arguments swapped for the second and the charge set chosen by whether
+    # that shell sits on A.
+    @inbounds for i in 1:BS.nshells
+        Ni = Nvals[i]; ioff = ao_offset[i]
+        for j in i:BS.nshells
+            Nj = Nvals[j]; joff = ao_offset[j]
+            i_on_A, j_on_A = GaussianBasis.on_atom_flags(BS, A, i, j)
+
+            ∇nuclear_μ!(bufi, BS, i_on_A ? no_A : only_A, i, j)   # (Ni,Nj,3)
+            ∇nuclear_μ!(bufj, BS, j_on_A ? no_A : only_A, j, i)   # (Nj,Ni,3)
+            si = i_on_A ? 1.0 : -1.0
+            sj = j_on_A ? 1.0 : -1.0
+
+            for k = 1:3
+                bi = Ni*Nj*(k-1)
+                bj = Nj*Ni*(k-1)
+                for js = 1:Nj, is = 1:Ni
+                    v = si*bufi[bi + is + Ni*(js-1)] + sj*bufj[bj + js + Nj*(is-1)]
+                    out[ioff+is, joff+js, k] = v
+                    if i != j
+                        out[joff+js, ioff+is, k] = v
+                    end
                 end
             end
-        end # inbounds
-    end
-
-    # i ∈ A & j ∈ A
-    workerpool(allocate, Ashells; chunksize = 1) do i, buf
-        @inbounds begin
-            Ni = Nvals[i]
-            ioff = ao_offset[i]
-            I = (ioff+1):(ioff+Ni)
-            for j in Ashells
-                Nj = Nvals[j]
-                Nij = Ni*Nj
-                joff = ao_offset[j]
-                J = (joff+1):(joff+Nj)
-
-                # - ⟨i'|∑Vc|j⟩ - ⟨i|∑Vc|j'⟩ c != a
-                cint1e_ipnuc_sph!(buf, @SVector(Cint[i-1,j-1]), no_A, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
-
-                for k in 1:3
-                    r = (1+Nij*(k-1)):(k*Nij)
-                    ∇k = reshape(buf[r], Int(Ni), Int(Nj))
-                    out[I,J,k] .-= ∇k  # ⟨i'|∑Vc|j ⟩ c != a
-                end
-            end
-        end #inbounds
-    end
-
-    # i ∈ A & j ∉ A
-    workerpool(allocate, Ashells; chunksize = 1) do i, buf
-        @inbounds begin
-            Ni = Nvals[i]
-            ioff = ao_offset[i]
-            I = (ioff+1):(ioff+Ni)
-            for j in notAshells
-                Nj = Nvals[j]
-                Nij = Ni*Nj
-                joff = ao_offset[j]
-                J = (joff+1):(joff+Nj)
-
-                # - ⟨i'|∑Vc|j⟩ + ⟨i|Va|j'⟩ c != a
-                cint1e_ipnuc_sph!(buf, @SVector(Cint[i-1,j-1]), no_A, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
-                for k in 1:3
-                    r = (1+Nij*(k-1)):(k*Nij)
-                    ∇k = buf[r]
-                    out[I,J,k] .-= reshape(∇k, Int(Ni), Int(Nj))
-                end
-
-                cint1e_ipnuc_sph!(buf, @SVector(Cint[j-1,i-1]), only_A, BS.lib.natm, BS.lib.bas, BS.lib.nbas, BS.lib.env)
-                for k in 1:3
-                    r = (1+Nij*(k-1)):(k*Nij)
-                    ∇k = buf[r]
-                    out[I,J,k] .+= transpose(reshape(∇k, Int(Nj), Int(Ni)))
-                end
-            end
-        end #inbounds
-    end
-
-    # Add transpose values
-    # This must be done outside the threaded loops
-    # to avoid race conditions.
-    for k in 1:3
-        out[:,:,k] .+= out[:,:,k]'
+        end
     end
 
     return out

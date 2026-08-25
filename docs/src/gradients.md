@@ -241,7 +241,7 @@ exactly the same single flip used for overlap and kinetic:
 
 `∇overlap_μ!`/`∇kinetic_μ!` apply that same flip by hand (`.*= -1.0`)
 because `S`/`T` carry no leading sign of their own to fold it into;
-`∇nuclear_μ!`/`∇nuclear_ν!` don't need to, only because `V^A`/`V^{¬A}`
+`∇nuclear_μ!` doesn't need to, only because `V^A`/`V^{¬A}`
 *already* carry a leading minus (from `Z` being stored positive but the
 potential being attractive) for the flip to land inside of -- not because
 `cint1e_ipnuc_sph!` is doing anything libcint's other kernels don't.
