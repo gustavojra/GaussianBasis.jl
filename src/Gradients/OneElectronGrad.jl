@@ -572,3 +572,84 @@ function _scatter_∇1e!(callback, out, BS, i, notAshells, buf, Nvals, ao_offset
         end
     end
 end
+
+
+###########################################################
+###########################################################
+#                     General kernel                       #
+###########################################################
+###########################################################
+
+# Shared whole-array kernel for overlap/kinetic, parametrized by `callback`
+# (the bare, unchecked shell-differentiation primitive, e.g. `∇overlap_μ!`)
+# instead of a string, mirroring how `get_1e_matrix!` in
+# Integrals/OneElectron.jl takes a callback rather than branching on one.
+# Calls the BARE primitive (`∇overlap_μ!`/`∇kinetic_μ!`), not the safe,
+# bounds-checked `∇overlap!`/`∇kinetic!` shell-pair form -- going through
+# the safe form would pay for a fresh `buf` allocation on every call, where
+# this loop instead reuses one buffer per worker task across every shell
+# pair it handles (translational invariance also lets it skip same-atom
+# pairs and only visit Ashells×notAshells once, mirroring the rest via
+# transpose). Safe here because `i`/`j` are always drawn from this loop's
+# own bounded `Ashells`/`notAshells` and `buf` is sized from `Nmax` up
+# front, not because the callback validates anything itself. Nuclear isn't
+# wired through here at all: its three-loop structure amortizes the
+# `deepcopy`-based fudged nuclear-charge arrays once across every shell
+# pair, which this generic per-pair `callback` shape has no way to do.
+function ∇1e(callback, BS::BasisSet, A)
+    out = zeros(BS.nbas, BS.nbas, 3)
+    return ∇1e!(callback, out, BS, A)
+end
+
+function ∇1e!(callback, out, BS::BasisSet, A)
+
+    if size(out) != (BS.nbas, BS.nbas, 3)
+        throw(DimensionMismatch("Size of the output array needs to be (nbas, nbas, 3)"))
+    end
+
+    atomA = BS.atoms[A]
+
+    # Shell indexes for basis in the atom A
+    Ashells = Int[]
+    notAshells = Int[]
+    for i in 1:BS.nshells
+        b = BS.shells[i]
+        if b.atom == atomA
+            push!(Ashells, i)
+        else
+            push!(notAshells, i)
+        end
+    end
+
+    Nvals = num_basis.(BS.shells)
+    ao_offset = cumsum(Nvals) .- Nvals
+    Nmax = maximum(Nvals)
+
+    allocate(body) = body(zeros(Cdouble, 3*Nmax^2))
+    workerpool(allocate, Ashells; chunksize = 1) do i, buf
+        @inbounds begin
+            Ni = Nvals[i]
+            ioff = ao_offset[i]
+            for j in notAshells
+                Nj = Nvals[j]
+                joff = ao_offset[j]
+                Nij = Ni*Nj
+                # Call the bare shell-differentiation primitive
+                callback(buf, BS, i, j)
+                I = (ioff+1):(ioff+Ni)
+                J = (joff+1):(joff+Nj)
+
+                # Get strides for each cartesian
+                for k in 1:3
+                    r = (1+Nij*(k-1)):(k*Nij)
+                    @views ∇k = buf[r]
+                    out[I,J,k] .+= reshape(∇k, Ni, Nj)
+                end
+
+                # Copy over the transpose
+                out[J,I,:] .+= permutedims(out[I,J,:], (2,1,3))
+            end
+        end #inbounds
+    end
+    return out
+end
